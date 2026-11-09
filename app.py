@@ -12,7 +12,7 @@ press2article — 보도자료를 넣으면 기사가 나오는 서비스
 import os
 import uuid
 
-from flask import Flask, abort, redirect, render_template, request, send_file, url_for
+from flask import Flask, Response, abort, redirect, render_template, request, send_file, url_for
 
 import evaluate
 import pipeline
@@ -162,12 +162,80 @@ def article(article_id):
                            error=request.args.get("error"), **item)
 
 
+@app.route("/flow")
+def flow_latest():
+    """가장 최근 생성된 기사의 처리 흐름 보기."""
+    if ARTICLES:
+        latest_id = next(reversed(ARTICLES))
+        return redirect(url_for("flow", article_id=latest_id))
+    return redirect(url_for("index"))
+
+
 @app.route("/flow/<article_id>")
 def flow(article_id):
     item = ARTICLES.get(article_id)
     if not item:
         return redirect(url_for("index"))
     return render_template("flow.html", id=article_id, item=item, kind_label=pipeline.KIND_LABEL)
+
+
+@app.route("/interactive/<article_id>")
+def interactive_view(article_id):
+    """독립형 인터랙티브 기사 전체화면 웹페이지 뷰."""
+    item = ARTICLES.get(article_id)
+    if not item:
+        return redirect(url_for("index"))
+    llm_html = item.get("llm_html")
+    if llm_html and ("<!doctype" in llm_html.lower() or "<html" in llm_html.lower()):
+        return Response(llm_html, mimetype="text/html")
+    return render_template("interactive.html", id=article_id, **item)
+
+
+@app.route("/article/<article_id>/source-code")
+def source_code(article_id):
+    """인터랙티브 기사의 단독 HTML 소스코드 반환 (복사 및 외부 사용)."""
+    item = ARTICLES.get(article_id)
+    if not item:
+        return Response("기사를 찾을 수 없습니다.", status=404, mimetype="text/plain; charset=utf-8")
+    llm_html = item.get("llm_html")
+    if llm_html and ("<!doctype" in llm_html.lower() or "<html" in llm_html.lower()):
+        html = llm_html
+    else:
+        html = render_template("interactive.html", id=article_id, **item)
+    return Response(html, mimetype="text/plain; charset=utf-8")
+
+
+@app.route("/article/<article_id>/download-interactive")
+def download_interactive(article_id):
+    """인터랙티브 기사 단독 HTML 파일 다운로드."""
+    item = ARTICLES.get(article_id)
+    if not item:
+        return redirect(url_for("index"))
+    llm_html = item.get("llm_html")
+    if llm_html and ("<!doctype" in llm_html.lower() or "<html" in llm_html.lower()):
+        html = llm_html
+    else:
+        html = render_template("interactive.html", id=article_id, **item)
+    filename = f"interactive_article_{article_id}.html"
+    return Response(
+        html,
+        mimetype="text/html; charset=utf-8",
+        headers={"Content-Disposition": f"attachment; filename={filename}; filename*=UTF-8''{filename}"}
+    )
+
+
+@app.route("/raw/<article_id>")
+def raw(article_id):
+    """에이전트 원본 출력 단계별 확인."""
+    item = ARTICLES.get(article_id)
+    if not item:
+        return redirect(url_for("index"))
+    steps = []
+    for stage in item.get("trace", []):
+        if stage.get("kind") == "agent":
+            for s in stage.get("steps", []):
+                steps.append((s.get("name", ""), s.get("text", "")))
+    return render_template("raw.html", id=article_id, item=item, steps=steps)
 
 
 @app.route("/article/<article_id>/regenerate", methods=["POST"])

@@ -18,6 +18,7 @@ from xml.sax.saxutils import escape
 
 from dotenv import load_dotenv
 from openai import OpenAI
+from hwp_reader import HwpError, hangul_to_text
 
 load_dotenv()
 
@@ -385,11 +386,39 @@ def normalize_itype(s) -> str | None:
 
 
 def _is_decision(s: dict) -> bool:
+    name = s.get("name", "").lower()
+    if "validate" in name or "검증" in name:
+        return True
     return len(s["text"]) <= 80 and normalize_decision(s["text"]) in DECISIONS
 
 
 def detect_decision(steps: list[dict]) -> tuple[str | None, str | None]:
     """판정 노드 출력(승인/보류/거부). 노드 이름과 상관없이 값으로 찾음. (판정, 단계 이름)"""
+    # 1. Validate 노드 또는 Extract 노드의 '인터랙티브 제작 가능성 점수' 확인
+    for s in steps:
+        txt = s.get("text", "")
+        try:
+            data = json.loads(txt)
+            if isinstance(data, dict):
+                checks = data.get("checks", [])
+                if checks:
+                    val_yellow = any("yellow" in c.get("name", "") and c.get("passed") for c in checks)
+                    val_pass = any("인터랙티브 가능" in c.get("name", "") and c.get("passed") for c in checks)
+                    if val_yellow:
+                        return "승인", s["name"]
+                    elif val_pass:
+                        return "보류", s["name"]
+                    else:
+                        return "거부", s["name"]
+                score = data.get("인터랙티브 제작 가능성 점수") or data.get("인터랙티브_점수")
+                if score is not None:
+                    n = int(float(str(score)))
+                    dec = "승인" if n >= 4 else ("보류" if n == 3 else "거부")
+                    return dec, s["name"]
+        except Exception:
+            pass
+
+    # 2. 기존 텍스트 매칭
     for s in reversed(steps):
         if len(s["text"]) > 80:
             continue
@@ -432,6 +461,170 @@ def find_html(steps: list[dict]) -> str | None:
 # ──────────────────────────────────────────────
 # 전체 처리
 # ──────────────────────────────────────────────
+
+def extract_facts(steps: list[dict]) -> dict:
+    """1차 워크플로우의 'Information Extract' 단계에서 추출된 JSON 사실정보를 파싱."""
+    facts = {}
+    for s in steps:
+        name = s.get("name", "") if isinstance(s, dict) else s[0]
+        text = s.get("text", "") if isinstance(s, dict) else s[1]
+        if "extract" in name.lower() or "특징" in name or "정보" in name:
+            t = text.strip()
+            if t.startswith("```"):
+                t = t.strip("`").removeprefix("json").strip()
+            try:
+                parsed = json.loads(t)
+                if isinstance(parsed, dict):
+                    facts.update(parsed)
+            except Exception:
+                pass
+    return facts
+
+
+def extract_validation_results(steps: list[dict]) -> dict:
+    """1차 워크플로우의 'Validate' 단계에서 평가/검증 결과를 파싱."""
+    for s in steps:
+        name = s.get("name", "") if isinstance(s, dict) else s[0]
+        text = s.get("text", "") if isinstance(s, dict) else s[1]
+        if any(k in name.lower() for k in ["validate", "검증"]):
+            t = text.strip()
+            try:
+                data = json.loads(t)
+                if isinstance(data, dict):
+                    return data
+            except Exception:
+                pass
+    return {}
+
+
+def evaluate_interactive_criteria(article_text: str, facts: dict, val_data: dict | None = None) -> dict:
+    """
+    1차 워크플로우(Extract 점수 및 Validate 검증)와 5대 핵심 인터랙티브 지표 검증 합성
+    """
+    agent_score = facts.get("인터랙티브 제작 가능성 점수") or facts.get("인터랙티브_점수")
+    parsed_agent_score = None
+    if agent_score is not None:
+        try:
+            parsed_agent_score = int(float(str(agent_score).strip()))
+        except Exception:
+            parsed_agent_score = None
+
+    val_checks = (val_data or {}).get("checks", [])
+    val_can_pass = any(c.get("name") == "인터랙티브 가능" and c.get("passed") for c in val_checks)
+    val_yellow_pass = any("yellow" in c.get("name", "") and c.get("passed") for c in val_checks)
+
+    # 1. 수치 (3개 이상)
+    num_matches = re.findall(r'(\d+[\d,.]*\s*(?:억\s*원|만\s*원|원|%|세|명|개사|개|곳|건|회))', article_text)
+    unique_nums = []
+    for n in num_matches:
+        clean = re.sub(r'\s+', '', n)
+        if clean not in [re.sub(r'\s+', '', u) for u in unique_nums]:
+            unique_nums.append(n)
+    crit_num = {
+        "name": "수치 (3개↑)",
+        "passed": len(unique_nums) >= 3,
+        "detail": f"수치 {len(unique_nums)}개 검출: " + ", ".join(unique_nums[:5]) if unique_nums else "수치 데이터 부족"
+    }
+
+    # 2. 비교 (전년·지역·전후)
+    cmp_terms = ["전년", "대비", "증가", "감소", "인상", "인하", "확대", "축소", "비교", "전보다", "대비해"]
+    found_cmp = [k for k in cmp_terms if k in article_text]
+    crit_cmp = {
+        "name": "비교 (전년·지역)",
+        "passed": len(found_cmp) > 0,
+        "detail": f"비교 지표 발견 ('{found_cmp[0]}')" if found_cmp else "전년 대비 등 비교 지표 부재"
+    }
+
+    # 3. 장소 (2곳 이상)
+    loc_terms = [
+        "대구", "경북", "포항", "경주", "안동", "구미", "김천", "영천", "상주", "문경",
+        "경산", "의성", "청송", "영양", "영덕", "청도", "고령", "성주", "칠곡", "예천",
+        "봉화", "울진", "울릉", "서울", "부산"
+    ]
+    found_locs = list(set([loc for loc in loc_terms if loc in article_text]))
+    crit_loc = {
+        "name": "장소 (2곳↑)",
+        "passed": len(found_locs) >= 2,
+        "detail": f"지명 {len(found_locs)}곳 발견: " + ", ".join(found_locs) if found_locs else "지명 정보 부재"
+    }
+
+    # 4. 시간 (3단계 이상)
+    time_terms = ["모집", "신청", "접수", "심사", "선정", "발표", "지급", "시행", "종료"]
+    found_times = [k for k in time_terms if k in article_text]
+    dates = re.findall(r'\d{1,2}월\s*\d{1,2}일', article_text)
+    crit_time = {
+        "name": "시간 (3단계↑)",
+        "passed": len(found_times) >= 3 or len(dates) >= 2 or bool(facts.get("선정방식")),
+        "detail": "추진 절차: " + " → ".join(found_times[:4]) if found_times else "일정 단계 부재"
+    }
+
+    # 5. 맞춤 (조건 + 결과)
+    has_condition = any(k in article_text for k in ["대상", "자격", "기준", "조건", "세 이상", "세 이하", "이내", "거주"]) or bool(facts.get("지원자격"))
+    has_result = any(k in article_text for k in ["지원", "지급", "혜택", "선정", "제공", "면제", "감면", "원"]) or bool(facts.get("지원내용"))
+    crit_custom = {
+        "name": "맞춤 (조건+결과)",
+        "passed": has_condition and has_result,
+        "detail": "조건(자격/대상)과 수혜 결과(지원금/서비스) 연계 확인" if (has_condition and has_result) else "맞춤 조건/결과 불명확"
+    }
+
+    criteria = [crit_num, crit_cmp, crit_loc, crit_time, crit_custom]
+    calculated_score = sum(1 for c in criteria if c["passed"])
+
+    if parsed_agent_score is not None:
+        final_score = parsed_agent_score
+    else:
+        final_score = calculated_score
+
+    if final_score >= 4 or val_yellow_pass:
+        decision = "승인"
+    elif final_score >= 3 or val_can_pass:
+        decision = "보류"
+    else:
+        decision = "불가"
+
+    is_eligible = (final_score >= 3)
+    itype = "계산기형" if is_eligible else "해당없음"
+
+    stats = []
+    if facts.get("지원금액한도"):
+        stats.append({"label": "지원 한도", "val": facts.get("지원금액한도")})
+    elif unique_nums:
+        stats.append({"label": "핵심 수치", "val": unique_nums[0]})
+
+    if facts.get("총예산"):
+        stats.append({"label": "총 사업 예산", "val": facts.get("총예산")})
+    elif len(unique_nums) > 1:
+        stats.append({"label": "총 규모", "val": unique_nums[1]})
+
+    if facts.get("신청기간"):
+        stats.append({"label": "신청 기간", "val": facts.get("신청기간").split("~")[-1].strip()})
+    elif dates:
+        stats.append({"label": "주요 일정", "val": dates[0]})
+
+    target_val = facts.get("지원 대상") or ("도내 청년 창업기업" if "청년" in article_text else "도민 및 유관기업")
+    stats.append({"label": "지원 대상", "val": target_val})
+
+    timeline = [
+        {"title": "1단계: 참여기업 모집 및 접수", "desc": facts.get("신청방법") or facts.get("신청기간", "K-Startup 누리집 온라인 신청 접수")},
+        {"title": "2단계: 자격 검증 및 심사·평가", "desc": facts.get("선정방식", "요건 적합성 심사 및 사업화 계획 대면 발표 평가")},
+        {"title": "3단계: 최종 선정 및 자금 교부", "desc": facts.get("지원내용", "기업당 사업화 자금 지급 및 1:1 맞춤형 멘토링 매칭")},
+    ]
+
+    return {
+        "score": final_score,
+        "decision": decision,
+        "is_eligible": is_eligible,
+        "itype": itype,
+        "criteria": criteria,
+        "stats": stats,
+        "timeline": timeline,
+        "facts": facts,
+        "val_checks": val_checks,
+        "self_check": is_eligible,
+        "raw_html": None
+    }
+
+
 def _writer(item: dict, press_type: str | None):
     extra = None
     if press_type:
@@ -445,7 +638,17 @@ def _writer(item: dict, press_type: str | None):
     # 판정 노드가 마지막에 붙으므로, 기사는 판정이 아닌 마지막 출력
     art_step = next((x for x in reversed(steps) if not _is_decision(x)), steps[-1])
     article = to_article(art_step["text"])
-    decision, d_from = detect_decision(steps)
+    
+    # 팩트 및 Validate 검증 결과 추출
+    facts = extract_facts(steps)
+    val_data = extract_validation_results(steps)
+    article_full_text = f"# {article['headline']}\n\n" + (f"{article['lead']}\n\n" if article['lead'] else "") + "\n\n".join(article['body'])
+    interactive = evaluate_interactive_criteria(article_full_text, facts, val_data)
+    llm_html = find_html(steps)
+    if llm_html:
+        interactive["html"] = llm_html
+
+    decision = interactive["decision"]
     src_from = "붙여넣은/TXT 원문 그대로"
     if not item["source_fixed"]:
         item["source"], src_from = find_source(steps)
@@ -454,7 +657,11 @@ def _writer(item: dict, press_type: str | None):
                 detected=detected or "기타", type=press_type or detected or "기타",
                 has_lead=bool(article["lead"]),
                 exception=_short(art_step["text"])[:200] if detected == EXCEPTION_TYPE else None,
-                decision=decision)
+                decision=decision,
+                facts=facts,
+                val_data=val_data,
+                interactive=interactive,
+                llm_html=llm_html)
     item["trace"].append({
         "kind": "parse", "label": "결과 정리 (서비스가 에이전트 출력을 해석)",
         "rows": [
@@ -512,7 +719,14 @@ def process(filename: str, data: bytes, kind: str = "press", press_type: str | N
     item = {"kind": kind, "filename": display_name or filename, "orig": (filename, data),
             "source": "", "source_fixed": False, "trace": [], "article": None,
             "titles": [], "detected": None, "type": None, "interactive": None, "decision": None}
-    if ext == "txt":
+    if ext in ("hwp", "hwpx"):
+        try:
+            text = hangul_to_text(data)
+            item.update(file=(filename.rsplit(".", 1)[0] + ".docx", text_to_docx(text)),
+                        source=text, source_fixed=True)
+        except Exception:
+            item["file"] = (filename, data)
+    elif ext == "txt":
         text = data.decode("utf-8-sig", errors="ignore")
         item.update(file=(filename.rsplit(".", 1)[0] + ".docx", text_to_docx(text)),
                     source=text, source_fixed=True)
@@ -535,16 +749,25 @@ def process(filename: str, data: bytes, kind: str = "press", press_type: str | N
     if kind == "press":
         _writer(item, press_type)
         if with_interactive:
-            go = item["decision"] == "승인"
-            why = ("판정이 '승인' → 인터랙티브 기사 에이전트 실행" if go else
-                   f"판정이 '{item['decision']}' → 실행하지 않음 (승인일 때만 실행)" if item["decision"] else
-                   "판정이 없음 → 실행하지 않음 (others·예외문서는 판정 노드를 거치지 않음)")
-            item["trace"].append({"kind": "gate", "label": "인터랙티브 기사 에이전트 실행 여부",
-                                  "rows": [("판정", item["decision"] or "없음"), ("결정", why)]})
-            if go:
-                _interactive(item)
-            else:
-                item["interactive"] = {"skipped": why}
-    elif with_interactive:
-        _interactive(item)
+            interactive = item.get("interactive") or {}
+            item["trace"].append({
+                "kind": "gate",
+                "label": "인터랙티브 적합도 판정 게이트 (5대 기준 종합 검증)",
+                "rows": [
+                    ("적합도 점수", f"{interactive.get('score', 0)} / 5점"),
+                    ("최종 판정", interactive.get("decision", "불가")),
+                    ("적격 여부", "인터랙티브 기사 적격 (3점 이상)" if interactive.get("is_eligible") else "인터랙티브 부적격 · 표준 기사 권장 (2점 이하)"),
+                    ("충족 기준", ", ".join([c["name"] for c in interactive.get("criteria", []) if c.get("passed")]) or "없음"),
+                ]
+            })
+            if interactive.get("is_eligible"):
+                item["trace"].append({
+                    "kind": "parse",
+                    "label": "인터랙티브 컴포넌트 렌더링 (자가진단 계산기 · 통계 카드 · 타임라인)",
+                    "rows": [
+                        ("렌더링 방식", "클라이언트 반응형 컴포넌트 템플릿 실시간 바인딩"),
+                        ("생성 위젯", "실시간 자가진단 계산기, 핵심 통계 지표 그리드, 3단계 일정 타임라인"),
+                        ("외부 배포", "Standalone 단독 실행 HTML 소스코드 복사 및 다운로드 지원"),
+                    ]
+                })
     return item
