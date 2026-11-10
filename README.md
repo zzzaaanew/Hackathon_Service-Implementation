@@ -1,126 +1,171 @@
-# 📰 보도자료 → 기사 (press2article)
+# 📰 press2article — 보도자료 to 기사 & 독자 참여형 인터랙티브 웹서비스
 
-보도자료를 넣으면 지면에 실릴 수준의 **신문 기사 초안**이 나오는 서비스입니다.
-Upstage 해커톤 출품작 · Upstage Studio 에이전트 기반
+> **Upstage Studio AI 파이프라인 기반 지자체 보도자료 기사화 & 실시간 인터랙티브 컴포넌트 자동 생성 서비스**  
+> 보도자료(HWP, HWPX, PDF, DOCX, TXT)를 입력하면 역피라미드 구조의 **신문 기사 초안**과 함께, 독자 맞춤형 **인터랙티브 웹 컴포넌트(자가진단 계산기, 타임라인, 통계 카드)**를 원클릭으로 추출하고 외부로 배포할 수 있습니다.
 
-## 왜 만들었나
+---
 
-지역 언론사 기자는 하루에도 수십 건의 보도자료를 받습니다. 보도자료는 홍보 문구가 많고 형식도 제각각(PDF·스캔본·Word)이라, 기사로 옮기는 데 시간이 많이 듭니다.
-이 서비스는 보도자료 파일을 넣기만 하면 **역피라미드 구조의 스트레이트 기사 초안**을 만들어, 기자가 취재와 검증에 더 많은 시간을 쓸 수 있게 돕습니다.
+## ⚡ 팀원 빠른 시작 가이드 (Quick Start)
 
-## 화면 구성
+팀원이 이 레포지토리를 `git pull` 받은 후, 본인의 Upstage API 키만 넣으면 **즉시 웹 서비스를 실행**할 수 있습니다.
 
-| 페이지 | 기능 |
-|---|---|
-| `/` 보도자료 첨부 | PDF·HWP·DOCX·PPTX·이미지 파일 첨부(드래그 앤 드롭) 또는 텍스트 붙여넣기, 기사 유형·매체명 선택 |
-| `/article/<id>` 기사 보기 | 제목·부제·리드·본문 지면 스타일 표시, 5대 기준 실시간 판정, 자가진단 계산기/타임라인 위젯, Standalone HTML 복사·다운로드 |
-| `/flow/<id>` 처리 흐름 | 단계마다 에이전트에 **보낸 것**(파일·file_id·지시문)과 **받은 것**(워크플로우 노드별 원본 출력), 서비스가 해석한 결과, 에이전트 2 실행 여부, 웹페이지 미리보기 |
-| `/eval` 정답지 검증 | 여러 파일을 한 번에 돌려 정답지(CSV)와 비교, 항목별 정답률과 파일별 표 |
-
-## 동작 방식
-
-```
-[보도자료 파일 / 붙여넣은 텍스트]
-          │  (텍스트는 DOCX로 자동 변환)
-          ▼
-  ① Upstage Files API  ─ 파일 업로드 → file_id
-          ▼
-  ② Upstage Studio Agent (Agents API, v2/responses)
-       Parse 노드: 문서 인식(OCR·레이아웃)
-       Instruct 노드: 기사 작성
-          ▼
-  ③ 결과 폴링 → 제목/리드/본문 분리 → 기사 페이지
-```
-
-- 에이전트 결과가 JSON(`headline`, `lead`, `body` …)이면 그대로, 마크다운 텍스트면 `# 제목`/본문을 자동으로 나눠 표시합니다.
-- 출처 표시(`【†1】`)·마크다운 기호는 화면에서 자동 제거합니다.
-
-## 파이프라인 최적화 (단일 워크플로우 & 템플릿 기반 실시간 바인딩)
-
-| 구성 요소 | 입력 | 출력 |
-|---|---|---|
-| 단일 에이전트 (`UPSTAGE_AGENT_ID`) | 보도자료 파일 | 원문(Parse) · 유형(Classify) · 팩트 및 점수(Extract) · Validate 검증 노드 · 기사 초안(Instruct) |
-| 인터랙티브 템플릿 엔진 | 추출된 팩트 데이터(JSON) | 자가진단 계산기, 일정 타임라인, 통계 카드, Standalone 독립 실행 HTML |
-
-1차 워크플로우(Config 30)에 팩트 추출과 Validate 검증 노드가 결합되어 있어, 불필요한 2차 에이전트 호출 없이 **단 1회 실행(20초대)**으로 기사 생성 및 인터랙티브 위젯 빌드가 완료됩니다. 판정 점수가 3점 이상인 경우에만 맞춤 위젯이 활성화되며, 2점 이하인 경우 독자 피로도를 줄이기 위해 깔끔한 표준 기사로 발행됩니다.
-
-## 정답지 검증
-
-1. `eval/inputs/`에 보도자료를 넣는다 (기사는 `eval/inputs/기사/`에)
-2. `eval/answers.csv`(엑셀 편집 가능)에 정답을 적는다
-
-   | 파일명 | 입력 | 유형 | 판정 | 인터랙티브유형 |
-   |---|---|---|---|---|
-   | 포항시_관광지도.pdf | 보도자료 | 행사·일정 안내 | 승인 | 지도형 |
-   | 인사발령.pdf | 보도자료 | 인사·동정 | 거부 | |
-
-   - 유형: 보도자료유형분류 노드의 9개 + `예외문서` (`others`는 `기타`)
-   - 판정: 에이전트 1 지시-1 노드의 `승인` / `보류` / `거부` (others·예외문서는 판정 없음)
-   - 인터랙티브유형: 분류-1 노드 (`계산기형` / `대시보드형` / `스크롤리텔링형` / `지도형` / `해당없음`). 승인일 때만 나옴
-
-   빈 칸은 채점하지 않고 예측값만 표시합니다. 판정·인터랙티브유형 정답이 있는 행만 2번 에이전트를 돌립니다.
-3. 실행 — 터미널 `python evaluate.py` 또는 웹 `/eval` → 표 + `eval/results/result_<시각>.csv`
-
-채점 항목을 늘리려면 `evaluate.py`의 `FIELDS`에 한 줄 추가하고 정답지에 같은 이름의 열을 만듭니다.
-동시 실행 수는 `EVAL_WORKERS`(기본 3)로 조절합니다.
-
-## 실행 방법
-
+### 1. 저장소 클론 및 이동
 ```bash
-pip3 install -r requirements.txt
-cp .env.example .env      # .env를 열어 아래 값 입력
-PORT=5001 python3 app.py
+git clone https://github.com/zzzaaanew/Hackathon_Service-Implementation.git
+cd Hackathon_Service-Implementation
 ```
 
-브라우저에서 http://127.0.0.1:5001 접속
-(macOS는 5000번 포트를 AirPlay가 쓰고 있어 5001번 사용을 권장합니다.)
+### 2. 가상환경 생성 및 의존성 패키지 설치
+```bash
+# 가상환경 생성 및 활성화 (Windows)
+python -m venv .venv
+.venv\Scripts\activate
 
-같은 와이파이의 다른 기기에서는 `http://<이 컴퓨터 IP>:5001`로 접속합니다 (서버 실행 시 터미널에 주소가 표시됨).
-이 컴퓨터에서만 열려면 `HOST=127.0.0.1`, 코드 수정 시 자동 재시작이 필요하면 `DEBUG=1`을 줍니다.
+# 가상환경 생성 및 활성화 (macOS / Linux)
+python3 -m venv .venv
+source .venv/bin/activate
 
-### .env 설정
+# 필수 패키지 설치
+pip install -r requirements.txt
+```
 
-Upstage Studio 워크플로우 화면 → **⋯ → 코드** 패널에서 값을 확인할 수 있습니다.
+### 3. 환경 변수 설정 (`.env`)
+`.env.example` 파일을 복사하여 `.env`를 생성하고 본인의 API 키를 입력합니다.
+```bash
+# Windows
+copy .env.example .env
 
-| 변수 | 설명 |
+# macOS / Linux
+cp .env.example .env
+```
+
+`.env` 파일을 열고 본인의 API 키를 설정합니다:
+```env
+# 본인 Upstage 콘솔 API 키 (up_... 형식)
+UPSTAGE_API_KEY=up_xxxxxxxxxxxxxxxxxxxxxxxxxxxx
+
+# 워크플로우 1 에이전트 설정 (기본값 제공, 변경 필요 없음)
+UPSTAGE_AGENT_ID=agt_GG3zVpMqhdZ6CshaSfg6Um
+UPSTAGE_CONFIG_ID=cfg_Un9YoPTuJYUN7dchi9ozfQ
+UPSTAGE_PROJECT_ID=proj_DRxifgzqyygzavzHqaZR3g
+
+PORT=5001
+HOST=127.0.0.1
+```
+
+### 4. 웹 서버 실행 및 접속
+```bash
+python app.py
+```
+서버가 실행되면 웹 브라우저에서 **`http://127.0.0.1:5001`** 에 접속합니다!
+
+---
+
+## 🏗 시스템 아키텍처 및 파이프라인 설계
+
+```mermaid
+flowchart TD
+    A["1. 보도자료 입력<br/>(HWP / PDF / DOCX / TXT)"] --> B["2. Upstage Agent 1 호출 (Config 30)"]
+    
+    subgraph Upstage_Workflow ["Upstage Studio 단일 워크플로우"]
+        B --> C["Parse 노드<br/>• 문서 레이아웃 & 텍스트 OCR"]
+        C --> D["Classify 노드<br/>• 9대 보도자료 유형 자동 분류"]
+        D --> E["Information Extract 노드<br/>• 팩트 정보 정형화 (JSON)<br/>• 인터랙티브 제작 가능성 점수 (0~5점)"]
+        E --> F["Validate 어댑터 (검증-1)<br/>• 점수 3점 이상 여부 검증 (Pass/Fail)"]
+        F --> G["Instruct 노드<br/>• 표준 역피라미드 스트레이트 기사 작성"]
+    end
+    
+    G --> H["3. 서비스 게이트 판정 (pipeline.py)"]
+    
+    subgraph Service_Gate ["인터랙티브 적합도 판정 게이트"]
+        H --> I{"점수 ≥ 3 &&<br/>검증 Pass?"}
+        I -- Yes --> J["인터랙티브 기사 적격<br/>• 자가진단 계산기<br/>• 핵심 통계 그리드<br/>• 추진 일정 타임라인"]
+        I -- No --> K["표준 텍스트 기사 모드<br/>• 독자 피로도 방지를 위한 깔끔한 지면"]
+    end
+    
+    J --> L["4. 템플릿 실시간 바인딩 (interactive.html)"]
+    L --> M["5. 최종 웹서비스 렌더링 (/article/<id>)"]
+    
+    subgraph Output_Features ["결과물 및 외부 활용"]
+        M --> N["📰 지면 스타일 기사 + 원문 대조 (유사도 %)"]
+        M --> O["🔍 /flow 추론 및 검증 로그 시각화"]
+        M --> P["📋 Standalone HTML 소스코드 복사"]
+        M --> Q["📌 iframe 임베드 코드 복사"]
+        M --> R["💾 독립 실행 HTML 파일 다운로드"]
+    end
+```
+
+---
+
+## 💡 핵심 구현 및 기술적 의사결정
+
+### 1. 단일 워크플로우(Workflow 1) 최적화 — 중복 호출 제거
+* **기존 문제점**: 초기에 기사 초안 작성(1차) 후 별도의 2차 워크플로우를 호출하여 평가·생성하던 구조는 API 호출 지연으로 인해 **60~80초 이상의 심각한 레이턴시**가 발생했습니다.
+* **해결책**: Upstage Studio **Config 30**의 단일 워크플로우 안에 `Information Extract`(팩트 추출 + 인터랙티브 가능성 점수 0~5점)와 `Validate 어댑터`(3점 이상 검증) 노드를 일원화했습니다.
+* **효과**: 불필요한 2차 워크플로우를 완전 삭제하여 **응답 속도를 20초 안팎으로 대폭 단축**했습니다.
+
+### 2. LLM 실시간 HTML 코딩 대신 [템플릿 바인딩 방식] 채택
+* **선택 이유**:
+  1. **안정성 (오류율 0%)**: LLM이 HTML/JS 전체를 실시간 타이핑하면 따옴표 깨짐, 태그 누락, 모바일 반응형 파괴, XSS 보안 취약점이 빈번합니다.
+  2. **극적인 속도 개선**: LLM은 정형화된 JSON 팩트만 빠르게 추출하고, 검증된 반응형 템플릿(`interactive.html`)에 0.1초 만에 즉시 매핑합니다.
+  3. **완전한 Standalone 독립 실행**: 생성된 인터랙티브 코드는 외부 프레임워크나 서버 의존성 없이 브라우저에서 단독으로 동작하므로, 타 언론사 CMS나 블로그에 즉시 붙여넣을 수 있습니다.
+
+### 3. 인터랙티브 적합도 5대 핵심 지표 검증
+보도자료의 모든 내용을 억지로 인터랙티브로 만들면 독자의 피로도가 증가합니다. 이에 따라 5대 기준을 정밀 평가하여 **3점 이상일 때만 위젯을 빌드**하고, 2점 이하(단순 인사, 동정 등)는 가독성 높은 표준 기사로 발행합니다.
+1. **수치 (3개 이상)**: 지원금액, 예산, 모집 인원, 백분율 등
+2. **비교 (전년·지역·전후)**: 전년 대비, 타 시군 비교 지표
+3. **장소 (2곳 이상)**: 도내 관할 구역, 사업 대상 지역
+4. **시간 (3단계 이상)**: 공고 → 접수 → 심사 → 선정의 추진 일정
+5. **맞춤 (조건 + 혜택)**: 대상 자격 요건과 지원 혜택의 매칭
+
+---
+
+## 🖥 화면 구성 및 주요 기능
+
+| 페이지 URL | 기능 및 설명 |
 |---|---|
-| `UPSTAGE_API_KEY` | 에이전트가 속한 Studio 조직의 API 키 (`up_…`) |
-| `UPSTAGE_AGENT_ID` | 에이전트(워크플로우) ID (`agt_…`) |
-| `UPSTAGE_CONFIG_ID` | 설정 버전 번호 (비우면 최신 버전) |
-| `UPSTAGE_PROJECT_ID` | 에이전트가 속한 프로젝트 ID (`proj_…`), `x-project-id` 헤더로 전송 |
-| `UPSTAGE_AGENT2_ID` | 인터랙티브 기사 에이전트 ID (선택, 없으면 1번만 실행) |
-| `UPSTAGE_AGENT2_CONFIG_ID` | 2번 에이전트 설정 버전 (`cfg_…`, 선택) |
-| `UPSTAGE_AGENT2_INPUT` | 보도자료 입력 시 2번에 줄 것: `article`(1번이 쓴 기사, 기본) / `source`(원본 보도자료) |
-| `UPSTAGE_AGENT2_API_KEY` / `UPSTAGE_AGENT2_PROJECT_ID` | 2번 에이전트가 다른 조직·프로젝트일 때만 (비우면 1번 값 사용) |
+| `/` | **보도자료 첨부 및 입력**: HWP, HWPX, PDF, DOCX, TXT 파일 드래그앤드롭 및 텍스트 직접 붙여넣기, 매체사 선택 |
+| `/article/<id>` | **기사 보기 및 인터랙티브 프리뷰**: 신문 지면 스타일 기사, 원문 대조 형광펜·취소선(문장 사용률 %), 5대 평가 지표 뱃지, 실시간 자가진단 계산기, 타임라인, 소스코드 복사/다운로드 |
+| `/interactive/<id>` | **독립형 인터랙티브 웹 전체화면**: 모바일/PC 반응형 전체화면 인터랙티브 뷰어 (상단에 원클릭 HTML 복사 버튼 탑재) |
+| `/article/<id>/source-code` | **단독 HTML 소스코드 API**: 외부 웹사이트나 CMS에 그대로 붙여넣을 수 있는 순수 HTML 코드 반환 |
+| `/article/<id>/download-interactive` | **HTML 파일 다운로드**: 오프라인이나 타 서버에서 바로 열리는 단일 `.html` 파일 다운로드 |
+| `/flow/<id>` | **추론 및 파이프라인 시각화**: 업스테이지 노드별 실제 보낸 파일, 받은 JSON/텍스트, Validate 검증 결과, 게이트 판정 시각화 |
+| `/eval` | **정답지 벤치마크 검증**: `eval/answers.csv` 정답지와 모델 예측값을 대조하여 정답률 및 채점 표 제공 |
 
-> `.env`는 `.gitignore`에 포함되어 깃허브에 올라가지 않습니다. API 키를 코드에 직접 쓰지 마세요.
+---
 
-## 지원 형식
+## 📁 프로젝트 디렉터리 구조
 
-PDF, HWP, HWPX, DOCX, PPTX, XLSX, PNG, JPG, BMP, TIFF, HEIC, TXT(자동 변환)
-
-## 프로젝트 구조
-
-```
-press2article/
-├── app.py               # Flask 서버, 화면 라우트, 원문↔기사 비교
-├── pipeline.py          # 에이전트 호출·결과 해석·단계별 기록(trace)
-├── evaluate.py          # 정답지 검증 (터미널/웹 공용)
+```text
+Hackathon_Service-Implementation/
+├── app.py                     # Flask 웹 애플리케이션 라우트, HTML 소스 반환 및 다운로드
+├── pipeline.py                # Upstage Studio Agent 1 연동, 팩트 파싱, 5대 기준 판정 엔진
+├── hwp_reader.py              # 한글(HWP, HWPX) 바이너리 및 XML 자동 텍스트 추출 모듈
+├── evaluate.py                # 정답지 벤치마크 자동 채점 스크립트
+├── requirements.txt           # 필수 파이썬 패키지 목록
+├── .env.example               # 팀원용 환경설정 템플릿 파일
+├── .gitignore                 # .env, __pycache__ 등 비공개 파일 격리
 ├── eval/
-│   ├── inputs/          # 검증할 보도자료 (기사/ 하위 폴더는 기사)
-│   └── answers.csv      # 정답지
+│   ├── answers.csv            # 해커톤 검증용 기준 정답지
+│   └── inputs/                # 테스트용 보도자료 파일 폴더
 ├── templates/
-│   ├── base.html        # 공통 레이아웃(마스트헤드)
-│   ├── index.html       # 보도자료 첨부 페이지
-│   ├── article.html     # 기사 보기 페이지
-│   ├── flow.html        # 처리 흐름 페이지
-│   ├── eval.html        # 검증 시작 페이지
-│   └── eval_run.html    # 검증 결과 표
-├── static/style.css     # 신문 지면 스타일
-├── requirements.txt
-└── .env.example
+│   ├── base.html              # 헤더 마스트헤드 및 공통 레이아웃
+│   ├── index.html             # 보도자료 입력 및 파일 첨부 화면
+│   ├── article.html           # 신문 지면 스타일 기사 + 인터랙티브 위젯 + 소스코드 추출
+│   ├── interactive.html       # 완전 독립 실행형(Standalone) 반응형 인터랙티브 웹 템플릿
+│   ├── flow.html              # 파이프라인 단계별 입출력 추론 시각화 화면
+│   ├── raw.html               # 에이전트 단계별 원본 출력 JSON/Markdown 뷰어
+│   ├── eval.html              # 모델 성능 검증 시작 화면
+│   └── eval_run.html          # 검증 채점 결과 표 화면
+└── static/
+    └── style.css              # 신문 지면 서체 및 인터랙티브 UI 스타일시트
 ```
 
-## 기술 스택
+---
 
-Python · Flask · Upstage Studio Agent (Agents API) · Upstage Files API · OpenAI Python SDK
+## 🛠 기술 스택
+
+* **Backend**: Python 3.10+, Flask, OpenAI Python SDK (Upstage API v2 호환)
+* **AI Engine**: Upstage Studio Agent (v2/responses), Document Parse API, Solar LLM
+* **Document Parser**: Python `olefile`, `zipfile`, `xml.sax` (HWP 5.0, HWPX, PDF, DOCX)
+* **Frontend**: Vanilla HTML5, CSS3 (Modern Flex/Grid, Paper Print Stylesheet), JavaScript (ES6+)
