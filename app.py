@@ -124,8 +124,8 @@ def index():
 
 @app.route("/generate", methods=["POST"])
 def generate():
-    kind = "article" if request.form.get("kind") == "article" else "press"
-    need = "interactive" if kind == "article" else "writer"
+    kind = "press"
+    need = "writer"
     if not agent_ready(need):
         return render_template("index.html", **_status(),
                                error=f"{pipeline.AGENTS[need]['label']} 설정이 .env에 없습니다.")
@@ -135,10 +135,10 @@ def generate():
     try:
         if upload and upload.filename:
             item = pipeline.process(upload.filename, upload.read(), kind=kind,
-                                    with_interactive=agent_ready("interactive"))
+                                    with_interactive=True)
         elif pasted:
             item = pipeline.process("pasted.txt", pasted.encode("utf-8"), kind=kind,
-                                    with_interactive=agent_ready("interactive"),
+                                    with_interactive=True,
                                     display_name="붙여넣은 텍스트")
         else:
             raise ValueError("파일을 첨부하거나 내용을 붙여넣어 주세요.")
@@ -188,7 +188,8 @@ def interactive_view(article_id):
     llm_html = item.get("llm_html")
     if llm_html and ("<!doctype" in llm_html.lower() or "<html" in llm_html.lower()):
         return Response(llm_html, mimetype="text/html")
-    return render_template("interactive.html", id=article_id, **item)
+    force = request.args.get("force") == "1"
+    return render_template("interactive.html", id=article_id, force_interactive=force, **item)
 
 
 @app.route("/article/<article_id>/source-code")
@@ -224,6 +225,17 @@ def download_interactive(article_id):
     )
 
 
+def _pretty(text: str) -> tuple[str, bool]:
+    s = text.strip()
+    if s.startswith("```"):
+        s = s.strip("`").removeprefix("json").strip()
+    try:
+        import json as _json
+        return _json.dumps(_json.loads(s), ensure_ascii=False, indent=2), True
+    except Exception:
+        return text, False
+
+
 @app.route("/raw/<article_id>")
 def raw(article_id):
     """에이전트 원본 출력 단계별 확인."""
@@ -231,11 +243,21 @@ def raw(article_id):
     if not item:
         return redirect(url_for("index"))
     steps = []
+    idx = 0
     for stage in item.get("trace", []):
         if stage.get("kind") == "agent":
             for s in stage.get("steps", []):
-                steps.append((s.get("name", ""), s.get("text", "")))
-    return render_template("raw.html", id=article_id, item=item, steps=steps)
+                idx += 1
+                raw_text = s.get("text", "")
+                pretty, is_json = _pretty(raw_text)
+                steps.append({
+                    "no": idx,
+                    "name": s.get("name") or f"단계 {idx}",
+                    "text": pretty,
+                    "is_json": is_json,
+                    "chars": len(raw_text),
+                })
+    return render_template("raw.html", id=article_id, filename=item.get("filename", ""), steps=steps)
 
 
 @app.route("/article/<article_id>/regenerate", methods=["POST"])
@@ -248,7 +270,7 @@ def regenerate(article_id):
         return redirect(url_for("article", article_id=article_id))
     try:
         new = pipeline.process(*item["orig"], kind=item["kind"], press_type=new_type,
-                               with_interactive=agent_ready("interactive"),
+                               with_interactive=True,
                                display_name=item["filename"])
     except Exception as e:
         return redirect(url_for("article", article_id=article_id,

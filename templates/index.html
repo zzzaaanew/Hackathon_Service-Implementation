@@ -3,7 +3,7 @@
 <main class="upload" id="upload-view">
   <div class="intro">
     <h1>보도자료를 올려주세요</h1>
-    <p>보도자료 한 건이든, 여러 건이 묶인 혼합 보도자료든 모두 괜찮아요.</p>
+    <p>파싱 → 10개 유형 분류 → 유형별 정보 추출 → 기사 작성 → 인터랙티브 5대 기준 자동 검증까지 한 번에 처리합니다.</p>
   </div>
 
   {% if not ready %}
@@ -14,17 +14,7 @@
   {% endif %}
 
   <form action="{{ url_for('generate') }}" method="post" enctype="multipart/form-data" id="form">
-    <fieldset class="kind">
-      <legend class="label">무엇을 넣나요?</legend>
-      <label class="kind-opt">
-        <input type="radio" name="kind" value="press" checked>
-        <span><b>보도자료</b><small>기사 작성 에이전트(판정 포함){% if ready2 %} → 승인이면 인터랙티브 기사 에이전트{% endif %}</small></span>
-      </label>
-      <label class="kind-opt {{ 'off' if not ready2 }}">
-        <input type="radio" name="kind" value="article" {% if not ready2 %}disabled{% endif %}>
-        <span><b>기사</b><small>{% if ready2 %}인터랙티브 기사 에이전트만 (판정 없이 바로){% else %}.env에 UPSTAGE_AGENT2_ID를 넣으면 사용 가능{% endif %}</small></span>
-      </label>
-    </fieldset>
+    <input type="hidden" name="kind" value="press">
 
     <section class="panel">
       <div class="tabs" role="tablist" aria-label="입력 방식">
@@ -36,7 +26,7 @@
         <label class="dropzone" id="dropzone" for="file">
           <svg width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M14 3H7a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8z"/><path d="M14 3v5h5"/><path d="M12 17v-6"/><path d="M9.5 13.5 12 11l2.5 2.5"/></svg>
           <strong>파일을 끌어다 놓거나 눌러서 선택하세요</strong>
-          <span class="hint">PDF · HWP · DOCX · PPTX · 이미지 · TXT, 최대 50MB</span>
+          <span class="hint">PDF · HWP · HWPX · DOCX · PPTX · 이미지 · TXT, 최대 50MB</span>
           <input type="file" name="press_file" id="file"
                  accept=".pdf,.hwp,.hwpx,.docx,.pptx,.xlsx,.png,.jpg,.jpeg,.bmp,.tiff,.heic,.txt">
         </label>
@@ -66,17 +56,17 @@
     </div>
 
     <button class="btn-primary" type="submit">
-      기사 작성하기
+      기사 작성 및 인터랙티브 판정하기
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 12h14M13 6l6 6-6 6"/></svg>
     </button>
-    <p class="note center">결과가 나오기까지 보통 1~2분 걸려요. 각 에이전트에 무엇이 들어가고 나왔는지는 결과 화면의 ‘처리 흐름’에서 볼 수 있어요.</p>
+    <p class="note center">단일 워크플로우로 약 20~40초 소요됩니다. 노드별 입력·출력·검증 과정은 결과 화면의 ‘처리 흐름 (Flow)’에서 확인할 수 있어요.</p>
   </form>
 </main>
 
 <main class="loading" id="loading-view" hidden>
   <svg class="spinner" width="48" height="48" viewBox="0 0 48 48" fill="none" aria-hidden="true"><circle cx="24" cy="24" r="20" stroke="#D8D1C2" stroke-width="4"/><path d="M24 4a20 20 0 0 1 20 20" stroke="#B3261E" stroke-width="4" stroke-linecap="round"/></svg>
-  <h1 id="loading-h">기사를 쓰고 있어요</h1>
-  <p>보통 1~2분 걸려요. 이 창을 닫지 말고 기다려 주세요.</p>
+  <h1 id="loading-h">보도자료를 분석해 기사와 인터랙티브를 만들고 있어요</h1>
+  <p>Document Parse → 유형 분류 → 스키마 추출 → 기사 작성 → 5대 기준 자동 검증 중입니다. 창을 닫지 말고 기다려 주세요.</p>
   <div class="file-chip" id="loading-chip">
     <span class="ext" id="loading-ext">TXT</span>
     <span class="name" id="loading-name">붙여넣은 보도자료</span>
@@ -134,8 +124,6 @@
       document.getElementById('loading-name').textContent = file.files[0].name;
       document.getElementById('loading-ext').textContent = (file.files[0].name.split('.').pop() || '').toUpperCase();
     }
-    if (document.querySelector('input[name=kind]:checked').value === 'article')
-      document.getElementById('loading-h').textContent = '인터랙티브 기사로 적합한지 판정하고 있어요';
     document.getElementById('upload-view').hidden = true;
     document.getElementById('loading-view').hidden = false;
     window.scrollTo(0, 0);
