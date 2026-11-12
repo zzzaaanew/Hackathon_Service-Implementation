@@ -225,6 +225,131 @@
         </div>
         {% endif %}
 
+        <!-- 유형별 비교·대조 위젯 -->
+        {% if interactive.compare_pairs %}
+        <div class="compare-stack">
+          {% for cp in interactive.compare_pairs %}
+          <div class="compare-card">
+            <div class="compare-head">
+              <span>{{ cp.title }}</span>
+              <span class="compare-badge">{{ cp.badge }}</span>
+            </div>
+            <div class="compare-cols">
+              <div class="compare-col">
+                <div class="compare-col-label">{{ cp.left_label }}</div>
+                <div>{{ cp.left_text }}</div>
+              </div>
+              <div class="compare-col right">
+                <div class="compare-col-label">{{ cp.right_label }}</div>
+                <div>{{ cp.right_text }}</div>
+              </div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+
+        <!-- 안전·재난 행동요령 체크리스트 -->
+        {% if interactive.checklist %}
+        <div class="checklist-widget" id="art-checklist" data-total="{{ interactive.checklist['items'] | length }}">
+          <div style="display:flex; justify-content:space-between; align-items:center; font-weight:700; font-size:14px;">
+            <span>{{ interactive.checklist.title }}</span>
+            <span id="art-chk-prog" style="font-size:12px; color:var(--accent);">0 / {{ interactive.checklist['items'] | length }} 확인</span>
+          </div>
+          {% if interactive.checklist.warn_items %}
+          <div style="background:#FFFBEB; border-left:3px solid #D97706; padding:8px 12px; font-size:13px;">
+            <b>통제·주의:</b> {{ interactive.checklist.warn_items | join(' · ') }}
+          </div>
+          {% endif %}
+          {% for chk in interactive.checklist['items'] %}
+          <button type="button" class="checklist-btn">
+            <span class="chk-mark">[ ]</span>
+            <span>{{ chk }}</span>
+          </button>
+          {% endfor %}
+        </div>
+        {% endif %}
+
+        <!-- 유형별 구조화 카드 그리드 -->
+        {% if interactive.cards %}
+        <div class="fact-cards-grid">
+          {% for c in interactive.cards %}
+          <div class="fact-card {{ 'accent' if c.tone == 'accent' else '' }}">
+            <span class="fact-card-tag">{{ c.tag }}</span>
+            <p class="fact-card-title">{{ c.title }}</p>
+            <p class="fact-card-body">{{ c.body }}</p>
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+
+        <!-- 수치 비주얼 비교 막대 -->
+        {% if interactive.visual_bars %}
+        <div class="vbars-wrap">
+          {% for vg in interactive.visual_bars %}
+          <div class="vbar-card">
+            <div class="vbar-head">
+              <b>{{ vg.title }}</b>
+              <span class="vbar-badge">{{ vg.badge }}</span>
+            </div>
+            {% for bi in vg['items'] %}
+            <div class="vbar-row">
+              <div class="vbar-meta"><span>{{ bi.label }}</span><b>{{ bi.val }}</b></div>
+              <div class="vbar-track"><div class="vbar-fill {{ 'accent' if bi.accent else '' }}" style="width: {{ bi.pct }}%;"></div></div>
+            </div>
+            {% endfor %}
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+
+        <!-- 독자 맞춤 주제별 탐색 탭 -->
+        {% if interactive.explore_tabs %}
+        <div class="exp-tabs-box" id="art-explore-tabs">
+          <div class="exp-tabs-title">내 관심 항목 골라보기</div>
+          <div class="exp-tab-btns">
+            {% for tab in interactive.explore_tabs %}
+            <button type="button" class="art-tab-btn {{ 'active' if loop.first else '' }}" data-target="{{ tab.id }}">
+              {{ tab.label }}{% if tab.highlight %} · {{ tab.highlight }}{% endif %}
+            </button>
+            {% endfor %}
+          </div>
+          {% for tab in interactive.explore_tabs %}
+          <div id="art-{{ tab.id }}" class="art-tab-panel {{ 'active' if loop.first else '' }}">
+            {% for p in tab.paragraphs %}<p>{{ p }}</p>{% endfor %}
+          </div>
+          {% endfor %}
+        </div>
+        {% endif %}
+
+        <!-- 30초 팩트체크 퀴즈 -->
+        {% if interactive.reader_quiz %}
+        {% set rq = interactive.reader_quiz %}
+        <div class="quiz-box" id="art-quiz" data-answer-idx="{{ rq.answer_idx }}" data-answer="{{ rq.answer }}" data-explanation="{{ rq.explanation }}">
+          <div class="quiz-tag">30초 팩트체크 퀴즈</div>
+          <div class="quiz-q">{{ rq.question }}</div>
+          <p class="quiz-prompt">"{{ rq.prompt }}"</p>
+          <div class="quiz-opts">
+            {% for opt in rq.options %}
+            <button type="button" class="art-quiz-opt" data-idx="{{ loop.index0 }}">{{ opt }}</button>
+            {% endfor %}
+          </div>
+          <div id="art-quiz-fb" class="quiz-fb" style="display:none;"></div>
+        </div>
+        {% endif %}
+
+        <!-- .ics 캘린더 일정 저장 버튼 -->
+        {% if interactive.calendar_event %}
+        {% set ce = interactive.calendar_event %}
+        <div style="margin: 12px 0;">
+          <button type="button" id="art-ics-btn" class="btn-outline"
+            data-title="{{ ce.title }}" data-start="{{ ce.start }}" data-end="{{ ce.end }}" data-loc="{{ ce.location }}"
+            style="height: 36px; font-size: 13px;">
+            📅 캘린더 일정 저장 (.ics)
+          </button>
+        </div>
+        {% endif %}
+
         <!-- 추진 일정 타임라인 위젯 -->
         {% if interactive.timeline %}
         <div class="timeline-list">
@@ -373,6 +498,77 @@
           resDesc.textContent = checker.dataset.failDesc;
         }
       });
+    });
+  }
+
+  // 안전·재난 체크리스트 토글
+  const artChk = document.getElementById('art-checklist');
+  if (artChk) {
+    const total = artChk.dataset.total;
+    const prog = document.getElementById('art-chk-prog');
+    artChk.querySelectorAll('.checklist-btn').forEach(b => {
+      b.addEventListener('click', () => {
+        const on = b.classList.toggle('checked');
+        b.querySelector('.chk-mark').textContent = on ? '[✔]' : '[ ]';
+        const done = artChk.querySelectorAll('.checklist-btn.checked').length;
+        if (prog) prog.textContent = `${done} / ${total} 확인`;
+      });
+    });
+  }
+
+  // 주제별 탐색 탭('내 관심 항목 골라보기')
+  const artTabs = document.getElementById('art-explore-tabs');
+  if (artTabs) {
+    artTabs.querySelectorAll('.art-tab-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        artTabs.querySelectorAll('.art-tab-btn').forEach(b => b.classList.remove('active'));
+        artTabs.querySelectorAll('.art-tab-panel').forEach(p => p.classList.remove('active'));
+        btn.classList.add('active');
+        const tgt = document.getElementById('art-' + btn.dataset.target);
+        if (tgt) tgt.classList.add('active');
+      });
+    });
+  }
+
+  // 30초 팩트체크 퀴즈
+  const artQuiz = document.getElementById('art-quiz');
+  if (artQuiz) {
+    const ansIdx = parseInt(artQuiz.dataset.answerIdx || '-1', 10);
+    const fb = document.getElementById('art-quiz-fb');
+    artQuiz.querySelectorAll('.art-quiz-opt').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const idx = parseInt(btn.dataset.idx || '-1', 10);
+        artQuiz.querySelectorAll('.art-quiz-opt').forEach((b, i) => {
+          b.disabled = true;
+          if (i === ansIdx) b.classList.add('correct');
+          else if (i === idx) b.classList.add('wrong');
+        });
+        if (fb) {
+          const ok = idx === ansIdx;
+          fb.style.display = 'block';
+          fb.className = 'quiz-fb ' + (ok ? 'ok' : 'no');
+          const strong = document.createElement('strong');
+          strong.textContent = ok ? '정답입니다! ' : `아쉽네요. 정답은 '${artQuiz.dataset.answer}'입니다. `;
+          fb.replaceChildren(strong, document.createTextNode(artQuiz.dataset.explanation || ''));
+        }
+      });
+    });
+  }
+
+  // .ics 캘린더 저장
+  const artIcs = document.getElementById('art-ics-btn');
+  if (artIcs) {
+    artIcs.addEventListener('click', () => {
+      const ics = [
+        'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Local-Link//Press2Article//KO',
+        'BEGIN:VEVENT', `DTSTART;VALUE=DATE:${artIcs.dataset.start}`, `DTEND;VALUE=DATE:${artIcs.dataset.end || artIcs.dataset.start}`,
+        `SUMMARY:${(artIcs.dataset.title || '보도자료 일정').replace(/\n/g, ' ')}`,
+        `LOCATION:${(artIcs.dataset.loc || '').replace(/\n/g, ' ')}`, 'END:VEVENT', 'END:VCALENDAR'
+      ].join('\r\n');
+      const a = document.createElement('a');
+      a.href = URL.createObjectURL(new Blob([ics], { type: 'text/calendar;charset=utf-8' }));
+      a.download = 'event_schedule.ics';
+      a.click();
     });
   }
 

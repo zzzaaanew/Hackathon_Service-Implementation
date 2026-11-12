@@ -123,20 +123,165 @@
 
       <!-- 실시간 결과 카드 -->
       <div id="sim-result" class="bg-gradient-to-r from-emerald-50 to-teal-50 border border-emerald-200 rounded-lg p-5">
-        <div class="flex flex-col md:flex-row md:items-start justify-between gap-4">
-          <div>
-            <span class="inline-block text-xs font-bold text-emerald-800 bg-emerald-100 px-2.5 py-0.5 rounded mb-1">판정 결과</span>
-            <h3 id="res-heading" class="text-lg font-bold text-emerald-950">🎉 {{ interactive.self_check.pass_heading }}</h3>
-            <p id="res-detail" class="text-sm text-emerald-800 mt-1 leading-relaxed">{{ interactive.self_check.pass_detail }}</p>
+        {% set hl = interactive.self_check.highlight or '' %}
+        {% set long_hl = (hl | length) > 20 %}
+        <div class="flex flex-col {{ '' if long_hl else 'md:flex-row md:items-start' }} justify-between gap-4">
+          <div class="flex-1 min-w-0">
+            <span class="inline-block text-xs font-bold text-emerald-800 bg-emerald-100 px-2.5 py-0.5 rounded mb-1.5">판정 결과</span>
+            <h3 id="res-heading" class="text-lg font-bold text-emerald-950 break-keep">🎉 {{ interactive.self_check.pass_heading }}</h3>
+            <p id="res-detail" class="text-sm text-emerald-800 mt-1.5 leading-relaxed break-keep">{{ interactive.self_check.pass_detail }}</p>
           </div>
-          {% if interactive.self_check.highlight %}
-          <div class="md:text-right shrink-0">
-            <span class="text-xs text-gray-500 block">주요 규모/한도</span>
-            <span class="font-serif font-black text-xl text-emerald-700">{{ interactive.self_check.highlight }}</span>
+          {% if hl %}
+          <div class="{{ 'pt-3 border-t border-emerald-200/70' if long_hl else 'md:text-right md:max-w-[44%]' }} min-w-0">
+            <span class="text-xs text-gray-500 block mb-0.5">주요 규모/한도</span>
+            <span class="font-serif font-black {{ 'text-base md:text-lg leading-snug' if long_hl else 'text-xl' }} text-emerald-700 break-keep block">{{ hl }}</span>
           </div>
           {% endif %}
         </div>
       </div>
+    </section>
+    {% endif %}
+
+    <!-- 유형별 비교·대조 위젯 (통계·조사 수치 비교 / 해명·설명 쟁점 대조) -->
+    {% if interactive.compare_pairs %}
+    <section class="mb-10 space-y-4">
+      <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider">{{ interactive.widget_title or '핵심 비교 분석' }}</h3>
+      {% for cp in interactive.compare_pairs %}
+      <div class="bg-white rounded-xl border border-gray-200 p-6 shadow-sm">
+        <div class="flex flex-wrap items-center justify-between gap-2 mb-4">
+          <h4 class="font-bold text-lg text-gray-900 min-w-0 flex-1 break-keep">{{ cp.title }}</h4>
+          <span class="text-xs font-bold bg-red-50 text-red-700 border border-red-200 px-2.5 py-1 rounded break-keep">{{ cp.badge }}</span>
+        </div>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div class="bg-gray-50 border border-gray-200 rounded-lg p-4">
+            <div class="text-xs font-bold text-gray-500 mb-1.5">{{ cp.left_label }}</div>
+            <div class="text-sm text-gray-800 leading-relaxed">{{ cp.left_text }}</div>
+          </div>
+          <div class="bg-emerald-50 border border-emerald-200 rounded-lg p-4">
+            <div class="text-xs font-bold text-emerald-700 mb-1.5">{{ cp.right_label }}</div>
+            <div class="text-sm font-medium text-emerald-950 leading-relaxed">{{ cp.right_text }}</div>
+          </div>
+        </div>
+      </div>
+      {% endfor %}
+    </section>
+    {% endif %}
+
+    <!-- 안전·재난 클릭형 행동요령 체크리스트 -->
+    {% if interactive.checklist %}
+    <section class="mb-10 bg-white rounded-xl shadow-sm border border-gray-200 p-6 md:p-8" id="safety-checklist" data-total="{{ interactive.checklist['items'] | length }}">
+      <div class="flex items-center justify-between border-b border-gray-100 pb-4 mb-5">
+        <div>
+          <h2 class="font-bold text-xl text-gray-900">{{ interactive.checklist.title }}</h2>
+          <p class="text-xs text-gray-500 mt-1">항목을 눌러 확인 여부를 점검할 수 있습니다.</p>
+        </div>
+        <span id="safety-progress" class="text-xs font-bold bg-red-50 text-red-700 px-3 py-1 rounded-full border border-red-200">
+          0 / {{ interactive.checklist['items'] | length }} 확인
+        </span>
+      </div>
+      {% if interactive.checklist.warn_items %}
+      <div class="mb-5 bg-amber-50 border border-amber-200 rounded-lg p-4">
+        <div class="text-xs font-bold text-amber-800 mb-1">통제 · 주의 사항</div>
+        <ul class="text-sm text-amber-950 space-y-1 list-disc list-inside">
+          {% for w in interactive.checklist.warn_items %}<li>{{ w }}</li>{% endfor %}
+        </ul>
+      </div>
+      {% endif %}
+      <div class="space-y-2.5">
+        {% for chk in interactive.checklist['items'] %}
+        <button type="button" class="safety-chk-btn w-full flex items-center gap-3 p-3.5 rounded-lg border-2 border-gray-200 bg-white text-left text-sm text-gray-800 hover:border-gray-400 transition">
+          <span class="chk-box w-5 h-5 rounded border border-gray-400 flex items-center justify-center text-xs font-bold shrink-0"></span>
+          <span>{{ chk }}</span>
+        </button>
+        {% endfor %}
+      </div>
+    </section>
+    {% endif %}
+
+    <!-- 유형별 전용 구조화 카드 그리드 (행사 장소·협약 당사자·성과 사유·조사 해석 등) -->
+    {% if interactive.cards %}
+    <section class="mb-10">
+      <h3 class="text-xs font-bold text-gray-400 uppercase tracking-wider mb-3">{{ interactive.widget_title or '상세 정보 카드' }}</h3>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        {% for c in interactive.cards %}
+        <div class="type-focus-card bg-white rounded-xl border {{ 'border-red-200' if c.tone == 'accent' else 'border-gray-200' }} p-5 shadow-sm cursor-pointer transition hover:border-gray-900">
+          <span class="inline-block text-[11px] font-bold {{ 'bg-red-50 text-red-700' if c.tone == 'accent' else 'bg-gray-100 text-gray-600' }} px-2 py-0.5 rounded mb-2">{{ c.tag }}</span>
+          <h4 class="font-bold text-base text-gray-900 leading-snug mb-1.5">{{ c.title }}</h4>
+          <p class="text-sm text-gray-600 leading-relaxed">{{ c.body }}</p>
+        </div>
+        {% endfor %}
+      </div>
+    </section>
+    {% endif %}
+
+    <!-- 수치 비주얼 비교 막대 (전·후 비교 또는 주요 지표 랭킹) -->
+    {% if interactive.visual_bars %}
+    <section class="mb-10 space-y-6">
+      {% for vg in interactive.visual_bars %}
+      <div class="bg-white rounded-xl border border-gray-200 p-6 md:p-8 shadow-sm">
+        <div class="flex items-center justify-between gap-2 mb-5">
+          <h3 class="font-bold text-base md:text-lg text-gray-900">{{ vg.title }}</h3>
+          <span class="text-xs font-extrabold px-2.5 py-1 rounded-full bg-red-50 text-red-700 border border-red-200">{{ vg.badge }}</span>
+        </div>
+        <div class="space-y-4">
+          {% for bi in vg['items'] %}
+          <div>
+            <div class="flex items-center justify-between text-sm mb-1.5">
+              <span class="font-medium text-gray-700">{{ bi.label }}</span>
+              <span class="font-bold {{ 'text-red-700' if bi.accent else 'text-gray-800' }}">{{ bi.val }}</span>
+            </div>
+            <div class="w-full h-3.5 bg-gray-100 rounded-full overflow-hidden">
+              <div class="h-full rounded-full transition-all duration-700 {{ 'bg-gradient-to-r from-red-600 to-rose-500' if bi.accent else 'bg-gray-400' }}" style="width: {{ bi.pct }}%;"></div>
+            </div>
+          </div>
+          {% endfor %}
+        </div>
+      </div>
+      {% endfor %}
+    </section>
+    {% endif %}
+
+    <!-- 독자 맞춤 주제별 탐색 탭 (내 관심 항목 골라보기) -->
+    {% if interactive.explore_tabs %}
+    <section class="mb-10 bg-white rounded-xl border border-gray-200 p-6 md:p-8 shadow-sm" id="explore-tabs-sec">
+      <div class="flex items-center justify-between gap-2 mb-4">
+        <h3 class="font-bold text-base md:text-lg text-gray-900">내 관심 항목 골라보기</h3>
+        <span class="text-xs text-gray-400">탭을 눌러 핵심 내용을 골라 확인하세요</span>
+      </div>
+      <div class="flex flex-wrap gap-2 mb-5">
+        {% for tab in interactive.explore_tabs %}
+        <button type="button" data-tab-target="{{ tab.id }}"
+          class="exp-tab-btn px-3.5 py-2 rounded-lg text-xs md:text-sm font-bold border transition {{ 'bg-gray-900 text-white border-gray-900' if loop.first else 'bg-gray-50 text-gray-700 border-gray-200 hover:border-gray-400' }}">
+          {{ tab.label }}{% if tab.highlight %} · <span class="opacity-80">{{ tab.highlight }}</span>{% endif %}
+        </button>
+        {% endfor %}
+      </div>
+      {% for tab in interactive.explore_tabs %}
+      <div id="{{ tab.id }}" class="exp-tab-panel space-y-2.5 {{ '' if loop.first else 'hidden' }} bg-gray-50 border border-gray-200 rounded-xl p-5">
+        {% for p in tab.paragraphs %}
+        <p class="text-sm md:text-base text-gray-800 leading-relaxed">{{ p }}</p>
+        {% endfor %}
+      </div>
+      {% endfor %}
+    </section>
+    {% endif %}
+
+    <!-- 30초 팩트체크 퀴즈 -->
+    {% if interactive.reader_quiz %}
+    {% set rq = interactive.reader_quiz %}
+    <section class="mb-10 bg-gradient-to-br from-slate-900 to-gray-800 text-white rounded-xl p-6 md:p-8 shadow-md" id="quiz-sec" data-answer-idx="{{ rq.answer_idx }}" data-answer="{{ rq.answer }}" data-explanation="{{ rq.explanation }}">
+      <div class="flex items-center justify-between gap-2 mb-3">
+        <span class="text-xs font-extrabold tracking-wider uppercase text-amber-400">30초 팩트체크 퀴즈</span>
+        <span class="text-[11px] bg-white/10 px-2.5 py-0.5 rounded-full text-gray-200">원문 수치 검증</span>
+      </div>
+      <h3 class="font-bold text-base md:text-lg mb-3">{{ rq.question }}</h3>
+      <p class="text-sm md:text-base text-gray-200 bg-white/5 border border-white/10 rounded-lg p-4 mb-5 leading-relaxed">"{{ rq.prompt }}"</p>
+      <div class="grid grid-cols-2 sm:grid-cols-4 gap-2.5 mb-4">
+        {% for opt in rq.options %}
+        <button type="button" data-idx="{{ loop.index0 }}" class="quiz-opt-btn py-2.5 px-3 rounded-lg bg-white/10 hover:bg-white/20 border border-white/20 text-sm font-bold transition text-center">{{ opt }}</button>
+        {% endfor %}
+      </div>
+      <div id="quiz-feedback" class="hidden text-xs md:text-sm rounded-lg p-3.5 mt-3"></div>
     </section>
     {% endif %}
 
@@ -218,6 +363,24 @@
       </div>
     </section>
     {% endif %}
+
+    <!-- 일정 저장(.ics) & 독자 반응 참여 바 -->
+    <section class="mt-8 bg-white rounded-xl border border-gray-200 p-6 flex flex-col sm:flex-row items-center justify-between gap-4 shadow-sm">
+      <div class="flex flex-wrap items-center gap-2">
+        <span class="text-xs font-bold text-gray-500 mr-1">독자 공감 반응</span>
+        <button type="button" class="react-btn inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-gray-200 bg-gray-50 hover:border-red-400 text-xs font-semibold text-gray-700 transition" data-base="0">👍 유익해요 <span class="react-cnt font-bold text-red-700">0</span></button>
+        <button type="button" class="react-btn inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-gray-200 bg-gray-50 hover:border-amber-400 text-xs font-semibold text-gray-700 transition" data-base="0">📍 내 지역도 필요 <span class="react-cnt font-bold text-amber-700">0</span></button>
+        <button type="button" class="react-btn inline-flex items-center gap-1.5 px-3 py-1.5 rounded-full border border-gray-200 bg-gray-50 hover:border-emerald-400 text-xs font-semibold text-gray-700 transition" data-base="0">📌 꼭 챙길게요 <span class="react-cnt font-bold text-emerald-700">0</span></button>
+      </div>
+      {% if interactive and interactive.calendar_event %}
+      {% set ce = interactive.calendar_event %}
+      <button type="button" id="ics-download-btn"
+        data-title="{{ ce.title }}" data-start="{{ ce.start }}" data-end="{{ ce.end }}" data-loc="{{ ce.location }}"
+        class="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg bg-red-600 hover:bg-red-700 text-white text-xs font-bold shadow-sm transition shrink-0">
+        📅 내 캘린더에 일정 저장 (.ics)
+      </button>
+      {% endif %}
+    </section>
   </main>
 
   <!-- 푸터 -->
@@ -273,6 +436,115 @@
         });
       });
     }
+
+    // 안전·재난 클릭형 체크리스트 + 장소/기관 카드 포커스 인터랙션
+    const safetyList = document.getElementById('safety-checklist');
+    if (safetyList) {
+      const total = parseInt(safetyList.dataset.total || '0', 10);
+      const prog = document.getElementById('safety-progress');
+      safetyList.querySelectorAll('.safety-chk-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const checked = btn.classList.toggle('checked');
+          const box = btn.querySelector('.chk-box');
+          btn.classList.toggle('border-emerald-500', checked);
+          btn.classList.toggle('bg-emerald-50', checked);
+          btn.classList.toggle('border-gray-200', !checked);
+          box.textContent = checked ? '✔' : '';
+          box.classList.toggle('bg-emerald-600', checked);
+          box.classList.toggle('text-white', checked);
+          box.classList.toggle('border-emerald-600', checked);
+          const done = safetyList.querySelectorAll('.safety-chk-btn.checked').length;
+          if (prog) prog.textContent = `${done} / ${total} 확인`;
+        });
+      });
+    }
+    document.querySelectorAll('.type-focus-card').forEach(card => {
+      card.addEventListener('click', () => {
+        card.classList.toggle('ring-2');
+        card.classList.toggle('ring-red-600');
+      });
+    });
+
+    // 주제별 탐색 탭('내 관심 항목 골라보기') 전환
+    const expSec = document.getElementById('explore-tabs-sec');
+    if (expSec) {
+      expSec.querySelectorAll('.exp-tab-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          expSec.querySelectorAll('.exp-tab-btn').forEach(b => {
+            b.className = 'exp-tab-btn px-3.5 py-2 rounded-lg text-xs md:text-sm font-bold border transition bg-gray-50 text-gray-700 border-gray-200 hover:border-gray-400';
+          });
+          btn.className = 'exp-tab-btn px-3.5 py-2 rounded-lg text-xs md:text-sm font-bold border transition bg-gray-900 text-white border-gray-900';
+          expSec.querySelectorAll('.exp-tab-panel').forEach(p => p.classList.add('hidden'));
+          const tgt = document.getElementById(btn.dataset.tabTarget);
+          if (tgt) tgt.classList.remove('hidden');
+        });
+      });
+    }
+
+    // 30초 팩트체크 퀴즈 인터랙션
+    const quizSec = document.getElementById('quiz-sec');
+    if (quizSec) {
+      const ansIdx = parseInt(quizSec.dataset.answerIdx || '-1', 10);
+      const fb = document.getElementById('quiz-feedback');
+      quizSec.querySelectorAll('.quiz-opt-btn').forEach(btn => {
+        btn.addEventListener('click', () => {
+          const idx = parseInt(btn.dataset.idx || '-1', 10);
+          quizSec.querySelectorAll('.quiz-opt-btn').forEach((b, i) => {
+            b.disabled = true;
+            if (i === ansIdx) {
+              b.classList.add('bg-emerald-500', 'border-emerald-300', 'text-white');
+            } else if (i === idx) {
+              b.classList.add('bg-red-500/80', 'border-red-300');
+            } else {
+              b.classList.add('opacity-50');
+            }
+          });
+          if (fb) {
+            const ok = idx === ansIdx;
+            fb.classList.remove('hidden');
+            fb.className = ok
+              ? 'text-xs md:text-sm rounded-lg p-3.5 mt-3 bg-emerald-500/20 border border-emerald-400/50 text-emerald-100'
+              : 'text-xs md:text-sm rounded-lg p-3.5 mt-3 bg-amber-500/20 border border-amber-400/50 text-amber-100';
+            const lead = document.createElement('strong');
+            lead.textContent = (ok ? '정답입니다! ' : `아쉽네요. 정답은 '${quizSec.dataset.answer}'입니다. `);
+            fb.replaceChildren(lead, document.createTextNode(quizSec.dataset.explanation || ''));
+          }
+        });
+      });
+    }
+
+    // .ics 캘린더 일정 저장
+    const icsBtn = document.getElementById('ics-download-btn');
+    if (icsBtn) {
+      icsBtn.addEventListener('click', () => {
+        const title = (icsBtn.dataset.title || '보도자료 일정').replace(/\n/g, ' ');
+        const start = icsBtn.dataset.start;
+        const end = icsBtn.dataset.end || start;
+        const loc = (icsBtn.dataset.loc || '').replace(/\n/g, ' ');
+        const ics = [
+          'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Local-Link//Press2Article//KO',
+          'BEGIN:VEVENT', `DTSTART;VALUE=DATE:${start}`, `DTEND;VALUE=DATE:${end}`,
+          `SUMMARY:${title}`, `LOCATION:${loc}`, 'END:VEVENT', 'END:VCALENDAR'
+        ].join('\r\n');
+        const blob = new Blob([ics], { type: 'text/calendar;charset=utf-8' });
+        const a = document.createElement('a');
+        a.href = URL.createObjectURL(blob);
+        a.download = 'event_schedule.ics';
+        a.click();
+      });
+    }
+
+    // 독자 공감 반응 토글 카운터
+    document.querySelectorAll('.react-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const base = parseInt(btn.dataset.base || '0', 10);
+        const on = btn.classList.toggle('ring-2');
+        btn.classList.toggle('ring-red-400', on);
+        btn.classList.toggle('bg-red-50', on);
+        const cnt = btn.querySelector('.react-cnt');
+        if (cnt) cnt.textContent = String(base + (on ? 1 : 0));
+      });
+    });
 
     // 소스코드 복사
     function copySourceCode() {

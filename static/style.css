@@ -353,3 +353,57 @@ input[type=file] { font: inherit; font-size: 14px; }
 .progress { height: 10px; background: #E6E0D3; }
 .progress div { height: 100%; background: var(--accent); transition: width .3s; }
 .runs { margin: 0; padding-left: 18px; font-size: 14px; display: flex; flex-direction: column; gap: 4px; }
+
+
+/* 유형별 비교·카드·체크리스트 위젯 */
+.compare-stack { display: flex; flex-direction: column; gap: 12px; }
+.compare-card { background: #fff; border: 1px solid var(--line); padding: 16px; }
+.compare-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px 10px; margin-bottom: 12px; font-size: 15px; font-weight: 700; }
+.compare-badge { font-size: 12px; font-weight: 700; color: var(--accent); background: #FEF2F2; border: 1px solid #FECACA; padding: 2px 8px; }
+.compare-cols { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.compare-col { border: 1px solid var(--line); padding: 12px; font-size: 13px; line-height: 1.5; background: #FAFAFA; }
+.compare-col.right { background: #F0FDF4; border-color: #BBF7D0; }
+.compare-col-label { font-size: 11px; font-weight: 700; color: var(--muted); margin-bottom: 4px; }
+.fact-cards-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); gap: 12px; }
+.fact-card { background: #fff; border: 1px solid var(--line); border-top: 3px solid var(--line); padding: 14px; }
+.fact-card.accent { border-top-color: var(--accent); }
+.fact-card-tag { font-size: 11px; font-weight: 700; color: var(--accent); display: block; margin-bottom: 4px; }
+.fact-card-title { font-size: 14px; font-weight: 700; color: var(--ink); margin: 0 0 6px; }
+.fact-card-body { font-size: 13px; color: var(--muted); margin: 0; line-height: 1.45; }
+.checklist-widget { background: #fff; border: 1px solid var(--line); padding: 16px; display: flex; flex-direction: column; gap: 10px; }
+.checklist-btn { display: flex; align-items: center; gap: 10px; padding: 10px 12px; border: 1px solid var(--line); background: #fff; text-align: left; font-size: 13px; cursor: pointer; }
+.checklist-btn.checked { background: #F0FDF4; border-color: #16A34A; font-weight: 700; }
+
+/* ── 체험형 수치 막대 · 탐색 탭 · 30초 팩트체크 퀴즈 ── */
+.vbars-wrap { margin: 16px 0; display: grid; gap: 12px; }
+.vbar-card { background: #FFFFFF; border: 1px solid var(--line); border-radius: 6px; padding: 14px 16px; }
+.vbar-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; font-size: 14px; color: var(--ink); }
+.vbar-badge { font-size: 11px; font-weight: 800; padding: 2px 8px; border-radius: 99px; background: #FFF1F0; color: var(--accent); border: 1px solid #FECACA; }
+.vbar-row { margin-top: 8px; }
+.vbar-meta { display: flex; justify-content: space-between; font-size: 12px; color: var(--muted); margin-bottom: 4px; }
+.vbar-meta b { color: var(--ink); }
+.vbar-track { height: 10px; background: #EFECE6; border-radius: 99px; overflow: hidden; }
+.vbar-fill { height: 100%; background: #9CA3AF; border-radius: 99px; transition: width .6s ease; }
+.vbar-fill.accent { background: linear-gradient(90deg, var(--accent), #E11D48); }
+
+.exp-tabs-box { margin: 16px 0; background: #FFFFFF; border: 1px solid var(--line); border-radius: 6px; padding: 14px 16px; }
+.exp-tabs-title { font-size: 13px; font-weight: 800; color: var(--ink); margin-bottom: 10px; }
+.exp-tab-btns { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.art-tab-btn { font-family: inherit; font-size: 12px; font-weight: 700; padding: 6px 11px; border: 1px solid var(--line); border-radius: 4px; background: var(--paper); color: var(--ink); cursor: pointer; }
+.art-tab-btn.active { background: var(--ink); color: #FFFFFF; border-color: var(--ink); }
+.art-tab-panel { display: none; background: #FAF8F4; border: 1px solid var(--line); border-radius: 4px; padding: 12px 14px; font-size: 13px; line-height: 1.65; color: var(--ink); }
+.art-tab-panel.active { display: block; }
+.art-tab-panel p { margin: 0 0 6px; }
+.art-tab-panel p:last-child { margin-bottom: 0; }
+
+.quiz-box { margin: 16px 0; background: #1F2937; color: #FFFFFF; border-radius: 6px; padding: 16px; }
+.quiz-tag { font-size: 11px; font-weight: 800; color: #FBBF24; margin-bottom: 4px; }
+.quiz-q { font-size: 14px; font-weight: 800; margin-bottom: 8px; }
+.quiz-prompt { margin: 0 0 12px; padding: 10px 12px; background: rgba(255,255,255,0.08); border-radius: 4px; font-size: 13px; line-height: 1.55; color: #E5E7EB; }
+.quiz-opts { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 8px; }
+.art-quiz-opt { font-family: inherit; padding: 8px 10px; border-radius: 4px; border: 1px solid rgba(255,255,255,0.25); background: rgba(255,255,255,0.1); color: #FFFFFF; font-size: 13px; font-weight: 700; cursor: pointer; }
+.art-quiz-opt.correct { background: #10B981; border-color: #6EE7B7; }
+.art-quiz-opt.wrong { background: #EF4444; border-color: #FCA5A5; }
+.quiz-fb { margin-top: 10px; padding: 10px 12px; border-radius: 4px; font-size: 12px; line-height: 1.5; }
+.quiz-fb.ok { background: rgba(16,185,129,0.22); border: 1px solid rgba(110,231,183,0.5); color: #ECFDF5; }
+.quiz-fb.no { background: rgba(245,158,11,0.22); border: 1px solid rgba(252,211,77,0.5); color: #FEF3C7; }

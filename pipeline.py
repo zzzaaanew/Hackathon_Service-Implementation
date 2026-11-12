@@ -473,7 +473,10 @@ def find_html(steps: list[dict]) -> str | None:
 # 전체 처리
 # ──────────────────────────────────────────────
 
-_META_FACT_KEYS = {"원문 맥락 서사", "인터랙티브 제작 가능성 점수", "인터랙티브_점수"}
+_META_FACT_KEYS = {
+    "원문 맥락 서사", "원문_맥락_서사",
+    "인터랙티브 제작 가능성 점수", "인터랙티브_제작_가능성_점수", "인터랙티브_점수",
+}
 
 
 def extract_facts(steps: list[dict]) -> dict:
@@ -508,15 +511,545 @@ def extract_validation_results(steps: list[dict]) -> dict:
     return {}
 
 
+def _nonempty(v) -> bool:
+    return v is not None and str(v).strip() not in ("", "[]", "{}")
+
+
+def _join_nonempty(items: list, sep: str = ", ") -> str:
+    return sep.join(str(x).strip() for x in items if _nonempty(x))
+
+
+def _parse_json_val(v):
+    """문자열 내부에 직렬화된 JSON('{...}', '[...]')이 있으면 파이썬 객체로 복원."""
+    for _ in range(2):
+        if not isinstance(v, str):
+            break
+        s = v.strip()
+        if not ((s.startswith("{") and s.endswith("}")) or (s.startswith("[") and s.endswith("]"))):
+            break
+        try:
+            v = json.loads(s)
+        except (ValueError, TypeError):
+            break
+    return v
+
+
+def _format_dict_val(d: dict) -> str:
+    """구조화된 dict 필드를 한국어 가독 문자열로 변환."""
+    if "start" in d or "end" in d:
+        return _join_nonempty([d.get("start"), d.get("end")], " ~ ")
+    if "name" in d or "address" in d:
+        n, a = _clean_fact_val(d.get("name")), _clean_fact_val(d.get("address"))
+        return f"{n} ({a})" if (n and a) else (n or a)
+    if "host" in d or "organizer" in d:
+        parts = []
+        if _nonempty(d.get("host")):
+            parts.append(f"주최: {d['host']}")
+        if _nonempty(d.get("organizer")):
+            parts.append(f"주관: {d['organizer']}")
+        return " / ".join(parts)
+    if "dept" in d or "tel" in d:
+        dep, tel = _clean_fact_val(d.get("dept")), _clean_fact_val(d.get("tel"))
+        return f"{dep} ({tel})" if (dep and tel) else (dep or tel)
+    if "time" in d or "title" in d:
+        head = _join_nonempty([d.get("time"), d.get("title")], " · ")
+        sp = _clean_fact_val(d.get("speaker"))
+        return f"{head} ({sp})" if (head and sp) else head
+    return ", ".join(f"{k}: {c}" for k, val in d.items() if (c := _clean_fact_val(val)))
+
+
 def _clean_fact_val(v) -> str:
+    """추출 스키마 값(JSON 문자열·dict·list 포함)을 사람이 읽을 한국어 텍스트로 정리."""
+    v = _parse_json_val(v)
     if v is None:
         return ""
     if isinstance(v, list):
-        return ", ".join(str(x).strip() for x in v if str(x).strip())
+        return ", ".join(c for x in v if (c := _clean_fact_val(x)))
     if isinstance(v, dict):
-        return ", ".join(f"{k}: {val}" for k, val in v.items() if str(val).strip())
+        return _format_dict_val(v)
     s = str(v).strip()
     return "" if s.lower() in ("none", "null", "n/a", "해당없음", "없음", "-") else s
+
+
+def _fact_get(facts: dict, *keys: str):
+    """키의 띄어쓰기·밑줄·가운뎃점 변형까지 허용해 스키마 값을 조회."""
+    for k in keys:
+        if k in facts and _nonempty(facts[k]):
+            return facts[k]
+        for alt in (k.replace(" ", "_"), k.replace("·", "_"), k.replace(" ", "")):
+            if alt in facts and _nonempty(facts[alt]):
+                return facts[alt]
+    return None
+
+
+def _split_fact_items(v, split_comma: bool = False) -> list[str]:
+    """배열(JSON 문자열 포함)이나 구분자 텍스트를 개별 항목 리스트로 분리."""
+    parsed = _parse_json_val(v)
+    if isinstance(parsed, list):
+        return [c for x in parsed if (c := _clean_fact_val(x))]
+    txt = _clean_fact_val(parsed)
+    if not txt:
+        return []
+    sep_pat = r"[\n;·•,]" if split_comma else r"[\n;•]"
+    return [part.strip(" -·•") for part in re.split(sep_pat, txt) if part.strip(" -·•")]
+
+
+_TYPE_WIDGET_META = {
+    "사업·제도 시행": ("policy", "내 지원 자격 자가진단"),
+    "행사·일정 안내": ("event", "행사 장소 · 참여 안내"),
+    "통계·조사 발표": ("stats_compare", "핵심 수치 비교 및 조사 해석"),
+    "성과·실적 홍보": ("achievement", "주요 성과 및 선정 사유"),
+    "협약·MOU": ("mou", "협약 당사자 및 협력 구조"),
+    "해명·설명": ("clarification", "보도 쟁점 · 기관 입장 대조"),
+    "안전·재난 안내": ("safety", "재난 안전 행동요령 체크리스트"),
+    "인사·동정": ("brief", "주요 인물 · 행위 브리핑"),
+    "기타": ("brief", "핵심 팩트 브리핑"),
+}
+
+
+def _build_stats(facts: dict, unique_nums: list[str], found_locs: list[str]) -> list[dict]:
+    priority_stat_keys = [
+        ("지원금액한도", "지원 한도"), ("총예산", "총 예산"), ("금액규모", "금액 규모"),
+        ("지자체부담분", "지자체 부담분"), ("투자지원규모", "투자 규모"), ("핵심수치", "핵심 수치"),
+        ("증감", "전년 대비 증감"), ("비교기준값", "비교 기준"), ("경쟁률/순위", "경쟁률·순위"),
+        ("피해규모", "피해 규모"), ("위기경보단계", "위기경보"), ("참가규모", "참가 규모"),
+        ("참가비", "참가비"), ("신청기간", "신청 기간"), ("행사일시", "행사 일시"),
+        ("체결일시", "체결 일시"), ("달성일자", "달성 일자"), ("지원 대상", "지원 대상"),
+        ("온오프라인구분", "진행 방식"), ("행사진행상태", "진행 상태"),
+    ]
+    stats, used_vals = [], set()
+    for fk, label in priority_stat_keys:
+        val = _clean_fact_val(_fact_get(facts, fk))
+        if val and val not in used_vals and len(val) <= 45:
+            stats.append({"label": label, "val": val})
+            used_vals.add(val)
+        if len(stats) >= 4:
+            return stats
+    for idx_n, num_val in enumerate(unique_nums):
+        if len(stats) >= 4:
+            break
+        if num_val not in used_vals:
+            stats.append({"label": f"핵심 수치 {idx_n + 1}", "val": num_val})
+            used_vals.add(num_val)
+    if len(stats) < 4 and found_locs:
+        loc_summary = ", ".join(found_locs[:3])
+        if loc_summary not in used_vals:
+            stats.append({"label": "주요 지역", "val": loc_summary})
+    return stats
+
+
+def _build_timeline(facts: dict) -> list[dict]:
+    raw_prog = _parse_json_val(_fact_get(facts, "주요프로그램"))
+    if isinstance(raw_prog, list) and raw_prog:
+        steps = []
+        for idx, item in enumerate(raw_prog, 1):
+            if isinstance(item, dict):
+                t = _clean_fact_val(item.get("time") or item.get("구분")) or f"단계 {idx}"
+                desc = _join_nonempty([item.get("title") or item.get("내용") or "", item.get("speaker") or item.get("비고") or ""], " · ")
+                if desc:
+                    steps.append({"title": t, "desc": desc})
+            else:
+                txt = _clean_fact_val(item)
+                if txt:
+                    steps.append({"title": f"프로그램 {idx}", "desc": txt})
+        if steps:
+            return steps
+
+    timeline_candidates = [
+        ("일정 · 접수", _fact_get(facts, "신청기간", "행사일시", "체결일시", "발생일시", "집계기간")),
+        ("방법 · 절차", _fact_get(facts, "신청방법", "신청방법·기간", "선정방식", "대응조치")),
+        ("혜택 · 결과", _fact_get(facts, "지원내용", "기대효과", "주요협력내용", "행동요령")),
+        ("후속 · 계획", _fact_get(facts, "다음단계일정", "후속일정", "향후계획", "후속조치")),
+    ]
+    return [{"title": title, "desc": c} for title, desc in timeline_candidates if (c := _clean_fact_val(desc))]
+
+
+def _build_type_widgets(detected: str | None, facts: dict) -> dict:
+    """8대 보도자료 유형별 전용 인터랙티브 위젯 페이로드 생성."""
+    widget_type, widget_title = _TYPE_WIDGET_META.get(detected or "기타", ("brief", "핵심 팩트 브리핑"))
+    cond_policy = _clean_fact_val(_fact_get(facts, "지원자격", "지원 대상"))
+    res_policy = _clean_fact_val(_fact_get(facts, "지원내용", "지원금액한도"))
+    if widget_type == "brief" and cond_policy and res_policy:
+        widget_type, widget_title = "policy", "내 지원 자격 자가진단"
+
+    self_check = None
+    cards: list[dict] = []
+    compare_pairs: list[dict] = []
+    checklist: dict | None = None
+
+    def _add_card(tag: str, val, tone: str = "neutral"):
+        txt = _clean_fact_val(val)
+        if txt:
+            cards.append({"tag": tag, "title": tag, "body": txt, "tone": tone})
+
+    if widget_type == "policy":
+        questions = []
+        if cond_policy:
+            questions.append({
+                "id": "q_cond",
+                "prompt": "지원 대상·자격 요건에 해당하시나요?",
+                "yes_label": f"예 · {cond_policy[:60]}{'...' if len(cond_policy) > 60 else ''}",
+                "no_label": "아니오 · 조건 미충족",
+            })
+        proc_val = _clean_fact_val(_fact_get(facts, "제출서류", "신청기간", "신청방법"))
+        if proc_val:
+            questions.append({
+                "id": "q_proc",
+                "prompt": "신청 기간·방법 및 제출서류를 확인하셨나요?",
+                "yes_label": f"예 · {proc_val[:60]}{'...' if len(proc_val) > 60 else ''}",
+                "no_label": "아니오 · 확인 필요",
+            })
+        if questions:
+            self_check = {
+                "title": widget_title,
+                "questions": questions,
+                "pass_heading": "지원 대상 요건 충족",
+                "pass_detail": res_policy or "제시된 자격 요건과 신청 절차를 확인했습니다. 기간 내 신청을 진행하세요.",
+                "fail_heading": "세부 요건 재확인이 필요합니다",
+                "fail_detail": f"지원 자격({cond_policy or '본문 요건'}) 및 신청 기간·서류를 다시 확인해 주세요.",
+                "highlight": _clean_fact_val(_fact_get(facts, "지원금액한도", "총예산")),
+            }
+        _add_card("달라진 점", _fact_get(facts, "달라진 점"), "accent")
+        _add_card("재원 · 근거법령", _join_nonempty([_clean_fact_val(_fact_get(facts, "재원구성")), _clean_fact_val(_fact_get(facts, "근거법령"))], " / "))
+
+    elif widget_type == "event":
+        venues = _split_fact_items(_fact_get(facts, "행사장소"), split_comma=True)
+        for idx, v in enumerate(venues, 1):
+            cards.append({"tag": f"개최 장소 {idx}" if len(venues) > 1 else "개최 장소", "title": v, "body": _clean_fact_val(_fact_get(facts, "교통·주차안내")) or "세부 일정·참가 안내 참고", "tone": "accent"})
+        _add_card("참가 대상 · 자격", _fact_get(facts, "참가대상·자격"))
+        _add_card("참석 주요 인사", _fact_get(facts, "참석인사"))
+        _add_card("주최 · 주관", _fact_get(facts, "주최·주관"))
+
+    elif widget_type == "stats_compare":
+        metric_name = _clean_fact_val(_fact_get(facts, "지표명", "조사명")) or "핵심 지표 비교"
+        base_v = _clean_fact_val(_fact_get(facts, "비교기준값"))
+        curr_v = _clean_fact_val(_fact_get(facts, "핵심수치"))
+        delta_v = _clean_fact_val(_fact_get(facts, "증감"))
+        if base_v or curr_v:
+            compare_pairs.append({
+                "badge": delta_v or "수치 비교",
+                "title": metric_name,
+                "left_label": "비교 기준값",
+                "left_text": base_v or "원문 기준 참고",
+                "right_label": "이번 조사 수치",
+                "right_text": curr_v or _clean_fact_val(_fact_get(facts, "세부수치")) or "기사 본문 참고",
+            })
+        _add_card("세부 수치 · 추이", _join_nonempty([_clean_fact_val(_fact_get(facts, "세부수치")), _clean_fact_val(_fact_get(facts, "시계열추이"))], " / "), "accent")
+        _add_card("기관 해석", _fact_get(facts, "기관해석"))
+        _add_card("조사 범위 · 방법", _join_nonempty([_clean_fact_val(_fact_get(facts, "조사범위")), _clean_fact_val(_fact_get(facts, "조사방법"))], " · "))
+
+    elif widget_type == "achievement":
+        _add_card("성과명 · 선정 기관", _join_nonempty([_clean_fact_val(_fact_get(facts, "성과명")), _clean_fact_val(_fact_get(facts, "수여·선정기관"))], " — "), "accent")
+        _add_card("핵심 선정 사유", _fact_get(facts, "핵심선정사유"))
+        _add_card("경쟁률 · 연속 여부", _join_nonempty([_clean_fact_val(_fact_get(facts, "경쟁률/순위")), _clean_fact_val(_fact_get(facts, "연속여부"))], " / "))
+        _add_card("기대 효과", _fact_get(facts, "기대효과"))
+
+    elif widget_type == "mou":
+        for party in _split_fact_items(_fact_get(facts, "협약당사자"), split_comma=True):
+            cards.append({"tag": "협약 당사자", "title": party, "body": _clean_fact_val(_fact_get(facts, "기관별역할")) or "공동 협력 추진", "tone": "accent"})
+        _add_card("주요 협력 내용", _fact_get(facts, "주요협력내용"))
+        _add_card("이행 구속력", _fact_get(facts, "이행구속력"))
+
+    elif widget_type == "clarification":
+        compare_pairs.append({
+            "badge": _clean_fact_val(_fact_get(facts, "자료구분")) or "팩트 대조",
+            "title": _clean_fact_val(_fact_get(facts, "쟁점")) or "보도 내용과 기관 입장 비교",
+            "left_label": f"보도 요지 ({_clean_fact_val(_fact_get(facts, '대상보도매체')) or '대상 보도'})",
+            "left_text": _clean_fact_val(_fact_get(facts, "보도요지")) or _clean_fact_val(_fact_get(facts, "대상보도제목")) or "보도 내용 참고",
+            "right_label": "기관 공식 입장 · 반박",
+            "right_text": _clean_fact_val(_fact_get(facts, "기관입장")) or _clean_fact_val(_fact_get(facts, "부인사항")) or "기관 해명 참고",
+        })
+        if _clean_fact_val(_fact_get(facts, "인정사항")) or _clean_fact_val(_fact_get(facts, "부인사항")):
+            compare_pairs.append({
+                "badge": "인정 vs 부인",
+                "title": "사실 확인 구분",
+                "left_label": "인정한 사항",
+                "left_text": _clean_fact_val(_fact_get(facts, "인정사항")) or "명시 없음",
+                "right_label": "부인 · 정정 사항",
+                "right_text": _clean_fact_val(_fact_get(facts, "부인사항")) or "명시 없음",
+            })
+        _add_card("수치 대비 · 근거자료", _join_nonempty([_clean_fact_val(_fact_get(facts, "수치대비")), _clean_fact_val(_fact_get(facts, "근거자료"))], " / "), "accent")
+
+    elif widget_type == "safety":
+        action_items = _split_fact_items(_fact_get(facts, "행동요령"), split_comma=True)
+        measure_items = _split_fact_items(_fact_get(facts, "대응조치"), split_comma=True)
+        control_items = _split_fact_items(_fact_get(facts, "통제제한사항"), split_comma=True)
+        chk_items = action_items or measure_items
+        if chk_items or control_items:
+            checklist = {
+                "title": f"{_clean_fact_val(_fact_get(facts, '재난유형')) or '재난·안전'} {'행동요령' if action_items else '대응·안전'} 점검",
+                "items": chk_items,
+                "warn_items": control_items,
+            }
+        areas = _split_fact_items(_fact_get(facts, "발생장소"), split_comma=True)
+        vuln_txt = _clean_fact_val(_fact_get(facts, "취약대상"))
+        for area in areas:
+            cards.append({"tag": "영향·관리 지역", "title": area, "body": vuln_txt or "안전 유의 필요", "tone": "accent"})
+        if not areas and vuln_txt:
+            _add_card("중점 보호 · 취약대상", vuln_txt, "accent")
+        if action_items and measure_items:
+            _add_card("기관 대응 조치 · 투입 자원", _join_nonempty([_clean_fact_val(_fact_get(facts, "대응조치")), _clean_fact_val(_fact_get(facts, "투입자원"))], " / "))
+        elif _clean_fact_val(_fact_get(facts, "투입자원")):
+            _add_card("투입 자원 · 지원 규모", _fact_get(facts, "투입자원"))
+        _add_card("관련 통계 · 향후 계획", _join_nonempty([_clean_fact_val(_fact_get(facts, "관련통계")), _clean_fact_val(_fact_get(facts, "향후계획"))], " / "))
+
+    else:
+        _add_card("주요 인물 · 행위", _join_nonempty([_clean_fact_val(_fact_get(facts, "인물목록")), _clean_fact_val(_fact_get(facts, "행위유형"))], " — "), "accent")
+        _add_card("논의 안건 · 주요 발언", _join_nonempty([_clean_fact_val(_fact_get(facts, "논의안건")), _clean_fact_val(_fact_get(facts, "주요발언(인용)"))], " / "))
+
+    return {
+        "widget_type": widget_type,
+        "widget_title": widget_title,
+        "self_check": self_check,
+        "cards": cards,
+        "compare_pairs": compare_pairs,
+        "checklist": checklist,
+    }
+
+
+def _enrich_from_article_text(
+    article_text: str,
+    widgets: dict,
+    facts: dict,
+    unique_nums: list[str],
+    found_locs: list[str],
+    timeline: list[dict],
+) -> None:
+    """others 경로(facts={}) 또는 스키마 빈약 문서에서도 본문 기반 비교·카드·체크리스트를 보강."""
+    sentences = [s.strip() for s in re.split(r"(?<=[.다요])\s+|\n+", article_text) if len(s.strip()) > 16 and not s.strip().startswith("#")]
+
+    # 1) 본문 내 '기존 X에서 Y로' 전후 비교 패턴 자동 추출
+    if not widgets["compare_pairs"]:
+        m_cmp = re.search(
+            r"(?:기존|당초|지난해|전년)\s*([0-9][0-9,.]*\s*(?:조\s*원|억\s*원|만\s*원|원|%|명|개소|곳|건))에서\s*([0-9][0-9,.]*\s*(?:조\s*원|억\s*원|만\s*원|원|%|명|개소|곳|건))",
+            article_text,
+        )
+        if m_cmp:
+            b_val, a_val = m_cmp.group(1).strip(), m_cmp.group(2).strip()
+            ctx = next((s for s in sentences if m_cmp.group(1) in s and m_cmp.group(2) in s), "지원·정책 규모 변경 비교")
+            widgets["compare_pairs"].append({
+                "badge": f"{b_val} → {a_val}",
+                "title": "전·후 지원/수치 변화 비교",
+                "left_label": "변경 전 (기존)",
+                "left_text": b_val,
+                "right_label": "변경 후 (확대·개편)",
+                "right_text": f"{a_val} ({ctx[:80]}{'...' if len(ctx) > 80 else ''})",
+            })
+
+    # 2) safety 체크리스트 보강 (추출값이 비어있으면 본문 내 점검·예방·지원 문장으로 체크리스트 구성)
+    if widgets["widget_type"] == "safety" and not widgets["checklist"]:
+        safety_sents = [s for s in sentences if any(k in s for k in ("점검", "운영", "지원", "예방", "대피", "수칙", "주의", "유의", "감시"))]
+        if safety_sents:
+            widgets["checklist"] = {
+                "title": "안전 관리 · 예방 대책 확인 체크리스트",
+                "items": safety_sents[:4],
+                "warn_items": [],
+            }
+
+    # 3) 카드가 비어 있을 때(특히 others 경로) 본문 핵심 팩트 카드 자동 생성
+    if not widgets["cards"]:
+        if found_locs:
+            widgets["cards"].append({
+                "tag": "관련 지역",
+                "title": ", ".join(found_locs[:5]),
+                "body": next((s for s in sentences if any(loc in s for loc in found_locs)), "기사 본문에 언급된 주요 대상 지역입니다."),
+                "tone": "accent",
+            })
+        sup_sent = next((s for s in sentences if any(k in s for k in ("지원", "투입", "확대", "운영", "점검", "추진"))), "")
+        if sup_sent:
+            widgets["cards"].append({
+                "tag": "핵심 조치 · 지원",
+                "title": (unique_nums[0] + " 등 핵심 추진" if unique_nums else "주요 추진 내용"),
+                "body": sup_sent,
+                "tone": "neutral",
+            })
+
+    # 4) 타임라인도 비어 있으면 본문 기승전결 핵심 문장 3개 이내로 요약 타임라인 보강
+    if not timeline and len(sentences) >= 2:
+        labels = ["배경 · 현황", "주요 대책 · 실행", "지원 · 기대효과"]
+        for lbl, sent in zip(labels, sentences[:3]):
+            timeline.append({"title": lbl, "desc": sent})
+
+
+def _num_to_float(num_str: str) -> float | None:
+    m = re.match(r"([0-9][0-9,.]*)\s*(.*)", num_str.strip())
+    if not m:
+        return None
+    val = float(m.group(1).replace(",", ""))
+    unit = re.sub(r"\s+", "", m.group(2))
+    mult = {"억원": 1e8, "만원": 1e4, "조원": 1e12}.get(unit, 1.0)
+    return val * mult
+
+
+def _build_visual_bars(compare_pairs: list[dict], unique_nums: list[str], article_text: str) -> list[dict]:
+    """수치 전후 비교 또는 주요 정량 지표를 애니메이션 비교 막대 데이터로 변환."""
+    bars = []
+    # 1) '기존 X -> Y' 직접 수치 비교가 있으면 비율 막대 생성
+    m_cmp = re.search(
+        r"(?:기존|당초|지난해|전년)\s*([0-9][0-9,.]*\s*(?:조\s*원|억\s*원|만\s*원|원|%|명|개소|곳|건))에서\s*([0-9][0-9,.]*\s*(?:조\s*원|억\s*원|만\s*원|원|%|명|개소|곳|건))",
+        article_text,
+    )
+    if m_cmp:
+        a_s, b_s = m_cmp.group(1).strip(), m_cmp.group(2).strip()
+        av, bv = _num_to_float(a_s), _num_to_float(b_s)
+        if av and bv and max(av, bv) > 0:
+            mx = max(av, bv)
+            delta_pct = round(((bv - av) / av) * 100)
+            sign = "+" if delta_pct >= 0 else ""
+            bars.append({
+                "title": "전·후 수치 변화 비교",
+                "badge": f"{sign}{delta_pct}%",
+                "items": [
+                    {"label": "변경 전", "val": a_s, "pct": max(14, round(av / mx * 100)), "accent": False},
+                    {"label": "변경 후", "val": b_s, "pct": max(14, round(bv / mx * 100)), "accent": True},
+                ],
+            })
+            return bars
+
+    # 2) 단일 비교 스키마(통계·조사 발표 등)에서 숫자 2개가 잡히면 막대 생성
+    for cp in compare_pairs:
+        nums_l = re.findall(r"[0-9][0-9,.]*\s*(?:조\s*원|억\s*원|만\s*원|원|%|명|개소|곳|건)", cp.get("left_text", ""))
+        nums_r = re.findall(r"[0-9][0-9,.]*\s*(?:조\s*원|억\s*원|만\s*원|원|%|명|개소|곳|건)", cp.get("right_text", ""))
+        if nums_l and nums_r:
+            av, bv = _num_to_float(nums_l[0]), _num_to_float(nums_r[0])
+            if av and bv and max(av, bv) > 0:
+                mx = max(av, bv)
+                bars.append({
+                    "title": cp["title"],
+                    "badge": cp["badge"],
+                    "items": [
+                        {"label": cp["left_label"], "val": nums_l[0], "pct": max(14, round(av / mx * 100)), "accent": False},
+                        {"label": cp["right_label"], "val": nums_r[0], "pct": max(14, round(bv / mx * 100)), "accent": True},
+                    ],
+                })
+                return bars
+
+    # 3) 일반 다수 수치 기사는 주요 수치 규모 랭킹 막대로 시각화
+    if len(unique_nums) >= 3:
+        sents = [s.strip() for s in re.split(r"(?<=[.다요])\s+|\n+", article_text) if s.strip()]
+        picked = []
+        for n in unique_nums[:4]:
+            ctx = next((s for s in sents if n in s and not s.startswith("#")), "")
+            short_lbl = re.sub(r"\s+", " ", ctx.split(n)[0])[-16:].strip(" ·,-") if ctx else ""
+            picked.append((short_lbl or n, n))
+        bar_items = [
+            {"label": lbl, "val": val, "pct": max(28, 100 - i * 18), "accent": i == 0}
+            for i, (lbl, val) in enumerate(picked)
+        ]
+        bars.append({"title": "기사 속 주요 정량 지표", "badge": f"{len(bar_items)}개 지표", "items": bar_items})
+    return bars
+
+
+def _build_explore_tabs(article_text: str) -> list[dict]:
+    """기사 본문 문단들을 주제별 클릭 탐색 탭(내 관심 항목 골라보기)으로 그룹핑."""
+    paras = [p.strip() for p in article_text.split("\n\n") if len(p.strip()) > 25 and not p.strip().startswith("#")]
+    if len(paras) < 2:
+        return []
+    themes = [
+        ("시설 · 점검", ("시설", "점검", "아케이드", "하우스", "도로", "장소", "현장")),
+        ("지원 · 예산", ("지원", "예산", "만원", "억", "기금", "요금", "난방", "혜택", "한도")),
+        ("대상 · 취약계층", ("대상", "노인", "취약", "이재민", "돌봄", "쉼터", "참가", "시민")),
+        ("안전 · 예방·일정", ("예방", "화재", "단속", "수칙", "신청", "일정", "기간", "안내")),
+    ]
+    tabs, used = [], set()
+    for label, kws in themes:
+        matched = [p for i, p in enumerate(paras) if i not in used and any(k in p for k in kws)]
+        if matched:
+            for p in matched:
+                used.add(paras.index(p))
+            nums = re.findall(r"\d[\d,.]*\s*(?:억원|만원|%|명|개소|곳|건)", " ".join(matched))
+            tabs.append({
+                "id": f"tab_{len(tabs)}",
+                "label": label,
+                "highlight": nums[0] if nums else "",
+                "paragraphs": matched[:2],
+            })
+    if len(tabs) < 2:
+        tabs = [
+            {"id": f"tab_{i}", "label": f"핵심 포인트 {i + 1}", "highlight": "", "paragraphs": [p]}
+            for i, p in enumerate(paras[:3])
+        ]
+    return tabs[:4]
+
+
+def _build_reader_quiz(article_text: str, unique_nums: list[str]) -> dict | None:
+    """기사 본문의 실제 수치 1개를 바탕으로 독자 참여형 30초 팩트체크 퀴즈 생성."""
+    if not unique_nums:
+        return None
+    sents = [s.strip() for s in re.split(r"(?<=[.다요])\s+|\n+", article_text) if 20 <= len(s.strip()) <= 180 and not s.strip().startswith("#")]
+    target_num, target_sent = None, None
+    for n in unique_nums:
+        sent = next((s for s in sents if n in s), None)
+        if sent:
+            target_num, target_sent = n, sent
+            break
+    if not target_num or not target_sent:
+        return None
+
+    m_unit = re.match(r"([0-9][0-9,.]*)\s*(.*)", target_num)
+    if not m_unit:
+        return None
+    base_val = float(m_unit.group(1).replace(",", ""))
+    unit = m_unit.group(2).strip()
+    is_int = "." not in m_unit.group(1)
+
+    def _fmt(v: float) -> str:
+        s = f"{int(round(v)):,}" if is_int else f"{round(v, 1):,}"
+        return f"{s}{unit}" if unit in ("%", "배", "위", "명", "건", "회", "곳", "개소", "개", "대", "톤", "만원", "억원") else f"{s} {unit}".strip()
+
+    options = [target_num]
+    # 같은 기사의 다른 수치 중 단위가 같거나 다른 숫자를 먼저 활용하고, 부족하면 배율 보완
+    for cand in unique_nums:
+        if cand != target_num and cand not in options and cand.endswith(unit):
+            options.append(cand)
+        if len(options) >= 4:
+            break
+    for mult in (0.5, 2.0, 1.5, 0.25):
+        if len(options) >= 4:
+            break
+        cand = _fmt(max(1.0, base_val * mult))
+        if cand not in options:
+            options.append(cand)
+    if len(options) < 3:
+        return None
+
+    # 결정적 순서 배치 (새로고침해도 동일 보기 유지)
+    shift = sum(ord(ch) for ch in target_num) % len(options)
+    ordered = options[shift:] + options[:shift]
+    ans_idx = ordered.index(target_num)
+    masked = target_sent.replace(target_num, "[  ?  ]", 1)
+    return {
+        "question": f"기사 내용 중 [ ? ]에 들어갈 알맞은 수치는 무엇일까요?",
+        "prompt": masked,
+        "options": ordered[:4],
+        "answer_idx": ans_idx,
+        "answer": target_num,
+        "explanation": target_sent,
+    }
+
+
+def _extract_calendar_event(article_headline: str, facts: dict) -> dict | None:
+    """행사·신청 기간에서 YYYY-MM-DD 날짜가 확인되면 .ics 캘린더 저장용 메타 생성."""
+    raw_dt = _clean_fact_val(_fact_get(facts, "행사일시", "신청기간", "체결일시"))
+    if not raw_dt:
+        return None
+    dates = re.findall(r"(20\d{2})[.\-/년\s]+(\d{1,2})[.\-/월\s]+(\d{1,2})", raw_dt)
+    if not dates:
+        return None
+    y, m, d = int(dates[0][0]), int(dates[0][1]), int(dates[0][2])
+    start_iso = f"{y:04d}{m:02d}{d:02d}"
+    if len(dates) >= 2:
+        y2, m2, d2 = int(dates[1][0]), int(dates[1][1]), int(dates[1][2])
+        end_iso = f"{y2:04d}{m2:02d}{d2:02d}"
+    else:
+        end_iso = start_iso
+    return {
+        "title": _clean_fact_val(_fact_get(facts, "행사명", "사업명", "협약명")) or article_headline,
+        "start": start_iso,
+        "end": end_iso,
+        "location": _clean_fact_val(_fact_get(facts, "행사장소", "신청방법", "체결장소")),
+        "label": raw_dt,
+    }
 
 
 def _strip_dates_and_phones(text: str) -> str:
@@ -566,7 +1099,16 @@ def evaluate_interactive_criteria(
             "cta": {},
             "facts": {},
             "val_checks": val_checks,
+            "widget_type": "exception",
+            "widget_title": "보도자료 아님 (예외문서)",
             "self_check": None,
+            "cards": [],
+            "compare_pairs": [],
+            "checklist": None,
+            "explore_tabs": [],
+            "visual_bars": [],
+            "reader_quiz": None,
+            "calendar_event": None,
             "raw_html": None,
             "skipped": "예외문서('보도자료 아님' 안내)로 분류되어 인터랙티브 대상에서 제외되었습니다.",
         }
@@ -593,7 +1135,7 @@ def evaluate_interactive_criteria(
     # ① 수치: 3개 이상 (금액·인원·비율 등 의미가 다른 숫자, 날짜·전화번호 제외)
     num_source = _strip_dates_and_phones(article_text)
     num_matches = re.findall(
-        r"(\d[\d,.]*\s*(?:조\s*원|억\s*원|만\s*원|원|%|퍼센트|명|인|개사|개소|개|곳|건|회|배|위|톤|㎢|㎡|km|m|시간|일|개월|년))",
+        r"(\d[\d,.]*\s*(?:조\s*원|억\s*원|만\s*원|원|%|퍼센트|명|인|개월|개사|개소|개|곳|건|회|배|위|톤|㎢|㎡|km|m|시간|일|년))",
         num_source,
     )
     unique_nums = []
@@ -628,13 +1170,15 @@ def evaluate_interactive_criteria(
     loc_terms = [
         "대구", "경북", "포항", "경주", "안동", "구미", "김천", "영천", "상주", "문경",
         "경산", "의성", "청송", "영양", "영덕", "청도", "고령", "성주", "칠곡", "예천",
-        "봉화", "울진", "울릉", "서울", "부산", "울산", "창원", "김해", "진주", "세종",
+        "봉화", "울진", "울릉", "서울", "부산", "울산", "광주", "대전", "인천", "수원",
+        "청주", "전주", "춘천", "제주", "창원", "김해", "진주", "세종",
     ]
     found_locs = [loc for loc in loc_terms if loc in article_text]
-    fact_loc = _clean_fact_val(facts.get("행사장소") or facts.get("체결장소") or facts.get("발생장소") or facts.get("장소"))
+    fact_loc = _clean_fact_val(_fact_get(facts, "행사장소", "체결장소", "발생장소", "장소"))
+    loc_places = _split_fact_items(_fact_get(facts, "행사장소", "발생장소"), split_comma=True)
     crit_loc = {
         "name": "장소 (2곳↑)",
-        "passed": len(found_locs) >= 2 or (len(found_locs) >= 1 and bool(fact_loc)),
+        "passed": len(found_locs) >= 2 or len(loc_places) >= 2 or (len(found_locs) >= 1 and bool(fact_loc)),
         "detail": f"지명 {len(found_locs)}곳 확인: " + ", ".join(found_locs[:5]) if found_locs else ("장소 정보 확인: " + fact_loc if fact_loc else "지도 표기 가능한 복수 지명·시설 부재"),
     }
 
@@ -642,10 +1186,12 @@ def evaluate_interactive_criteria(
     time_terms = ["공고", "모집", "신청", "접수", "심사", "평가", "선정", "발표", "지급", "시행", "종료", "추진"]
     found_times = [k for k in time_terms if k in article_text]
     dates = re.findall(r"\d{1,2}월\s*\d{1,2}일", article_text)
-    has_fact_time = sum(1 for k in ("신청기간", "선정방식", "다음단계일정", "후속일정", "향후계획", "시계열추이", "행사일시", "협약기간") if _clean_fact_val(facts.get(k)))
+    raw_prog = _parse_json_val(_fact_get(facts, "주요프로그램"))
+    prog_count = len(raw_prog) if isinstance(raw_prog, list) else 0
+    has_fact_time = sum(1 for k in ("신청기간", "선정방식", "다음단계일정", "후속일정", "향후계획", "시계열추이", "행사일시", "협약기간") if _clean_fact_val(_fact_get(facts, k)))
     crit_time = {
         "name": "시간 (3단계↑)",
-        "passed": len(found_times) >= 3 or len(dates) >= 2 or has_fact_time >= 2,
+        "passed": len(found_times) >= 3 or len(dates) >= 2 or has_fact_time >= 2 or prog_count >= 3,
         "detail": "절차·추이 확인: " + " → ".join(found_times[:4]) if found_times else ("일정·단계 정보 확인" if has_fact_time else "3단계 이상 일정·시계열 추이 부재"),
     }
 
@@ -722,21 +1268,32 @@ def evaluate_interactive_criteria(
         },
     ]
 
-    # 5. PDF 10페이지 추천 형식 자동 결정 (지도·차트·타임라인·계산기)
+    # 5. 유형별 인터랙티브 위젯 & 추천 형식 결정
+    widgets = _build_type_widgets(detected, facts)
     recommended_formats = []
-    if crit_custom["passed"] or detected == "사업·제도 시행":
+    if widgets["widget_type"] == "policy":
         recommended_formats.append("자가진단 계산기")
+    elif widgets["widget_type"] == "safety":
+        recommended_formats.append("행동요령 체크리스트")
+    elif widgets["widget_type"] == "clarification":
+        recommended_formats.append("쟁점·입장 대조표")
+    elif widgets["widget_type"] == "mou":
+        recommended_formats.append("기관·협력 구조 카드")
     if (crit_num["passed"] and crit_cmp["passed"]) or detected in ("통계·조사 발표", "성과·실적 홍보"):
         recommended_formats.append("핵심 수치 차트·대시보드")
     if crit_loc["passed"] or detected in ("행사·일정 안내", "안전·재난 안내"):
         recommended_formats.append("지도·장소 안내")
-    if crit_time["passed"]:
+    if crit_time["passed"] or detected == "행사·일정 안내":
         recommended_formats.append("단계별 타임라인")
     if not recommended_formats and is_eligible:
         recommended_formats.append("핵심 팩트 카드")
 
     if "자가진단 계산기" in recommended_formats:
         itype = "계산기형"
+    elif "행동요령 체크리스트" in recommended_formats:
+        itype = "체크리스트형"
+    elif "쟁점·입장 대조표" in recommended_formats:
+        itype = "비교대조형"
     elif "핵심 수치 차트·대시보드" in recommended_formats:
         itype = "대시보드형"
     elif "지도·장소 안내" in recommended_formats:
@@ -746,92 +1303,23 @@ def evaluate_interactive_criteria(
     else:
         itype = "해당없음"
 
-    # 6. 8개 유형 공통 동적 팩트/통계/타임라인/체크리스트 빌드 (하드코딩 제거)
+    # 6. 정제된 팩트/통계/타임라인/체험형 모듈 조립
     fact_items = [
-        {"key": k, "val": _clean_fact_val(v)}
+        {"key": k, "val": c}
         for k, v in facts.items()
-        if k not in _META_FACT_KEYS and _clean_fact_val(v)
+        if k not in _META_FACT_KEYS and (c := _clean_fact_val(v))
     ]
-
-    # 통계/요약 카드 최대 4개: 실제 추출 스키마 우선, 부족 시 본문 수치/지명 보완
-    stats = []
-    priority_stat_keys = [
-        ("지원금액한도", "지원 한도"), ("총예산", "총 예산"), ("금액규모", "금액 규모"),
-        ("지자체부담분", "지자체 부담분"), ("투자지원규모", "투자 규모"), ("핵심수치", "핵심 수치"),
-        ("증감", "전년 대비 증감"), ("비교기준값", "비교 기준"), ("경쟁률/순위", "경쟁률·순위"),
-        ("피해규모", "피해 규모"), ("위기경보단계", "위기경보"), ("참가규모", "참가 규모"),
-        ("참가비", "참가비"), ("신청기간", "신청 기간"), ("행사일시", "행사 일시"),
-        ("체결일시", "체결 일시"), ("달성일자", "달성 일자"), ("지원 대상", "지원 대상"),
-        ("참가대상·자격", "참가 대상"), ("행사장소", "행사 장소"), ("체결장소", "체결 장소"),
-    ]
-    used_vals = set()
-    for fk, label in priority_stat_keys:
-        val = _clean_fact_val(facts.get(fk))
-        if val and val not in used_vals and len(val) <= 45:
-            stats.append({"label": label, "val": val})
-            used_vals.add(val)
-        if len(stats) >= 4:
-            break
-    if len(stats) < 2 and unique_nums:
-        for idx_n, num_val in enumerate(unique_nums):
-            if num_val not in used_vals:
-                stats.append({"label": f"핵심 수치 {idx_n + 1}", "val": num_val})
-                used_vals.add(num_val)
-            if len(stats) >= 4:
-                break
-    if len(stats) < 4 and found_locs:
-        loc_summary = ", ".join(found_locs[:3])
-        if loc_summary not in used_vals:
-            stats.append({"label": "주요 지역", "val": loc_summary})
-
-    # 타임라인: 추출된 일정·절차·후속 필드만 동적으로 구성
-    timeline = []
-    timeline_candidates = [
-        ("일정 · 접수", facts.get("신청기간") or facts.get("행사일시") or facts.get("체결일시") or facts.get("발생일시") or facts.get("집계기간")),
-        ("방법 · 절차", facts.get("신청방법") or facts.get("신청방법·기간") or facts.get("선정방식") or facts.get("주요프로그램") or facts.get("대응조치")),
-        ("혜택 · 결과", facts.get("지원내용") or facts.get("기대효과") or facts.get("주요협력내용") or facts.get("행동요령")),
-        ("후속 · 계획", facts.get("다음단계일정") or facts.get("후속일정") or facts.get("향후계획") or facts.get("후속조치")),
-    ]
-    for title, desc in timeline_candidates:
-        c = _clean_fact_val(desc)
-        if c:
-            timeline.append({"title": title, "desc": c})
-
-    # 자가진단 체크카드: 조건과 결과가 실제로 추출된 경우에만 동적 질문 생성
-    self_check = None
-    if cond_val or res_val:
-        questions = []
-        if cond_val:
-            questions.append({
-                "id": "q_cond",
-                "prompt": f"해당 요건(대상·자격)에 부합하시나요?",
-                "yes_label": f"예 · {cond_val[:60]}{'...' if len(cond_val) > 60 else ''}",
-                "no_label": "아니오 · 조건 미충족",
-            })
-        loc_or_doc = _clean_fact_val(facts.get("제출서류") or facts.get("행사장소") or facts.get("신청기간") or facts.get("신청방법"))
-        if loc_or_doc:
-            questions.append({
-                "id": "q_proc",
-                "prompt": "신청 방법·일정(또는 장소)을 확인하셨나요?",
-                "yes_label": f"예 · {loc_or_doc[:60]}{'...' if len(loc_or_doc) > 60 else ''}",
-                "no_label": "아니오 · 확인 필요",
-            })
-        if questions:
-            self_check = {
-                "title": "내 해당 여부 및 주요 안내 확인" if detected != "안전·재난 안내" else "행동요령·대상 확인 체크",
-                "questions": questions,
-                "pass_heading": "대상 요건 확인 완료",
-                "pass_detail": res_val or "추출된 조건과 절차를 모두 확인했습니다. 아래 상세 안내에 따라 진행하세요.",
-                "fail_heading": "세부 요건 확인이 필요합니다",
-                "fail_detail": f"지원·참여 조건({cond_val or '본문 요건'}) 및 일정/서류를 다시 확인해 주세요.",
-                "highlight": _clean_fact_val(facts.get("지원금액한도") or facts.get("참가비") or facts.get("총예산")),
-            }
-
-    # 문의처·링크 CTA (추출된 실데이터만 사용, 가짜 링크 없음)
+    stats = _build_stats(facts, unique_nums, found_locs)
+    timeline = _build_timeline(facts)
+    _enrich_from_article_text(article_text, widgets, facts, unique_nums, found_locs, timeline)
+    visual_bars = _build_visual_bars(widgets["compare_pairs"], unique_nums, article_text)
+    explore_tabs = _build_explore_tabs(article_text)
+    reader_quiz = _build_reader_quiz(article_text, unique_nums)
+    calendar_event = _extract_calendar_event(article_text.splitlines()[0].lstrip("# "), facts)
     cta = {
-        "contact": _clean_fact_val(facts.get("문의처") or facts.get("신고문의처") or facts.get("담당부서")),
-        "method": _clean_fact_val(facts.get("신청방법") or facts.get("신청방법·기간")),
-        "link": _clean_fact_val(facts.get("신청링크")),
+        "contact": _clean_fact_val(_fact_get(facts, "문의처", "신고문의처", "담당부서")),
+        "method": _clean_fact_val(_fact_get(facts, "신청방법", "신청방법·기간")),
+        "link": _clean_fact_val(_fact_get(facts, "신청링크")),
     }
 
     return {
@@ -851,8 +1339,12 @@ def evaluate_interactive_criteria(
         "cta": cta,
         "facts": facts,
         "val_checks": val_checks,
-        "self_check": self_check,
+        "visual_bars": visual_bars,
+        "explore_tabs": explore_tabs,
+        "reader_quiz": reader_quiz,
+        "calendar_event": calendar_event,
         "raw_html": None,
+        **widgets,
     }
 
 
