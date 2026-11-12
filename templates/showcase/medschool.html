@@ -1,0 +1,221 @@
+{% extends "showcase/_base.html" %}
+{% set tl = [
+  {'d':'2. 10.','t':'연 100명 규모 결정','x':'보건의료정책심의위원회가 2030년과 2031년 신설 지역의대에서 연 100명 규모의 의사 인력을 양성하기로 심의·의결했습니다.','g':'결정'},
+  {'d':'7월','t':'지역의대 설립 기획단 출범','x':'교육부·보건복지부가 공동으로 기획단을 운영하기 시작했습니다. 양 부처 차관이 공동 단장을 맡고 보건의료·의학교육·지역의료 전문가가 참여했습니다.','g':'기획단'},
+  {'d':'7. 24. ~ 8. 6.','t':'1~3차 회의 · 후보지역 선정','x':'세 차례 회의(7. 24., 7. 31., 8. 6.)를 거쳐 (舊)전라남도와 경상북도를 후보지역으로 선정했습니다. 4개 분야 13개 지표(100점)로 정량평가했습니다.','g':'기획단'},
+  {'d':'8. 20.','t':'추진계획서 제출 기한','x':'경상북도는 국립경국대를 후보 대학으로 추천해 계획서를 냈습니다. 전남광주통합특별시는 대학 간 통합 합의가 어려워 지자체 주관 사항만 제출하고, 후보 대학 추천 기회를 달라고 건의했습니다.','g':'지자체'},
+  {'d':'8. 26.','t':'4차 회의 · 건의 수용','x':'정부는 전남광주통합특별시의 건의를 받아들여 8월 30일까지 후보 국립대를 추천하고 계획서를 함께 내도록 요청했습니다.','g':'기획단'},
+  {'d':'8. 30.','t':'전남광주, 순천대 추천','x':'전남광주통합특별시는 전남연구원을 통해 추천 심사 절차를 진행하고, 국립순천대를 후보 대학으로 추천하는 계획서를 제출했습니다.','g':'지자체'},
+  {'d':'9. 4. · 10. 30.','t':'5·6차 회의 · 적정성 검토','x':'소명자료 확인, 심사 담당자 직접 소명, 외부 법률자문을 거쳐 “추천을 반려해야 할 수준의 하자는 없다”고 판단했습니다. 두 지역 계획이 설립 원칙을 충족하고 실현 가능하다고 봤습니다.','g':'기획단'},
+  {'d':'11. 4.','t':'순천대 60명 · 경국대 40명 발표','x':'국립순천대와 국립경국대를 지역의대 신설 대학으로 선정하고 정원을 각각 60명, 40명 배정했습니다.','g':'결정'},
+  {'d':'2029년','t':'의사 인력 수급 재추계','x':'대학의 준비 정도, 한국의학교육평가원 평가인증 상황, 의료 여건 변화 등을 종합해 2032년 이후 추가 정원 배정 방안을 논의할 계획입니다.','g':'앞으로'},
+  {'d':'2030년','t':'신입생 입학 목표','x':'지역의대 신설은 2030년 신입생 입학 시작을 목표로 추진됩니다. 지역별 ‘시도-대학 지역의대 설립 추진단’과 정부 ‘지역의대 설립 지원단’이 꾸려집니다.','g':'앞으로'},
+] %}
+{% set idx = [
+  {'f':'의대 접근성','n':1,'i':['의대 접근성']},
+  {'f':'의료공급 부족','n':5,'i':['인구 대비 의대 정원수','인구 대비 지역의사 배치 인원수','인구 대비 활동 의사수','인구 대비 활동 전문의수','인구 대비 500병상 이상 종합병원 병상수']},
+  {'f':'의료 취약도','n':4,'i':['65세 이상 노인인구 비율','인구 대비 필수진료과 전문의수','입원환자 외부 유출률','치료가능 사망률']},
+  {'f':'정책효과성','n':3,'i':['취약 배후 인구수 (상급종합병원 기준시간 내 접근 불가능한 인구수)','지방소멸 위험지역 인구 비율','5극3특 권역별 의대 분포']},
+] %}
+{% set qa = [
+  {'c':'권한','q':'지자체에 추천을 받은 건 선정 권한을 넘긴 것 아닌가?','a':'지역의대 신설의 주된 목적이 지역·필수·공공의료 강화에 있어 지자체 의사를 중요하게 보고 추천을 요청했습니다. 추천은 중간단계이며 정부는 지자체 추천에 구속되지 않습니다.'},
+  {'c':'추천 과정','q':'순천대 추천 과정에 제기된 문제는 어떻게 검토했나?','a':'전남광주통합특별시로부터 수차례 소명자료를 받아 확인했고, 복수의 외부 법률자문에서 “추천을 반려하여야 할 수준의 하자는 없다”는 의견을 확인했습니다.'},
+  {'c':'추천 과정','q':'재심사나 정부 직접 심사 요청을 받아들이지 않은 이유는?','a':'지자체가 자체 심사 계획을 세워 추천했고 그 과정에 반려할 수준의 하자가 없다면, 재심사 요구나 정부의 직접 심사는 부적절하다고 판단했습니다.'},
+  {'c':'부지','q':'순천대는 부지 확보 계획만 냈는데, 법상 필수 요건 미충족 아닌가?','a':'의대 신설 대학 선정이나 정원 배정 이전에 교육시설 부지 소유권을 취득해야 한다는 명시적 규정은 없습니다. 계획서 항목도 향후 확보 계획을 심사하려는 취지를 포함합니다.'},
+  {'c':'부지','q':'무상임대는 공유재산법상 불가능하고, 매각 방식은 사후 보완 아닌가?','a':'순천시 확약서는 무상 사용·무상 대부·무상 임대 등 적법한 방식으로 추진한다고 규정하고 있어, 문언상 매각 방식도 포함되는 것으로 해석됩니다.'},
+  {'c':'부지','q':'‘부지 기확보’라는 허위 기재에 감점이 없었다는 지적은?','a':'외부 법률자문은 제출자료 전체와 부지 제공 확약의 존재 등을 종합해 판단해야 하며 고의적 허위 기재로 단정하기 어렵다고 봤습니다. ‘기확보’는 확약을 확보했다는 의미로 이해된다는 의견입니다.'},
+  {'c':'평가','q':'심사위원에 설계·건축 전문가가 없었다는 지적은?','a':'의료시설 설계·건축 전문가 등 요구 경력은 ‘예시’로 명시돼 있어, 해당 경력자가 없다고 심사위원 구성에 하자가 있다고 보기 어렵습니다.'},
+  {'c':'평가','q':'의료취약성 평가 항목을 반영하지 않은 건 불공정하지 않나?','a':'전남 전체의 의료취약성은 후보지역 결정 단계에서 이미 인정된 전제입니다. 독립 평가지표로 두지 않는 계획은 자료 제출 전 확정·통보됐고 양 대학에 동일하게 적용됐습니다.'},
+  {'c':'정원','q':'순천대 60명, 경국대 40명으로 나눈 이유는?','a':'연 100명 규모 안에서 교육여건과 지역의료 개선효과를 검토했습니다. 전남광주는 신설 의대에서 100명 규모 운영이 실질적으로 어렵고, 경북은 남부권에 55명 규모 동국의대가 있는 점을 고려했습니다.'},
+  {'c':'일정','q':'결정 이후 절차와 일정은?','a':'2030년 신입생 입학을 목표로 합니다. 지역별 ‘시도-대학 지역의대 설립 추진단’을 구성해 의대·교육병원 신설 계획을 구체화하고, ‘지역의대 설립 지원단’이 전체 상황을 모니터링합니다.'},
+] %}
+{% block css %}
+:root{--accent:#1f4fd8;--accent2:#ffcf5c;--hero-bg:#0c1a3d;--soft:#f3f5fa}
+.hero{background:linear-gradient(165deg,#0c1a3d,#16307a)}
+.cross{position:absolute;right:6%;top:18%;width:min(30vw,260px);opacity:.14}
+
+.seats{display:grid;grid-template-columns:repeat(20,1fr);gap:6px;margin-top:26px;max-width:640px}
+@media(max-width:560px){.seats{grid-template-columns:repeat(10,1fr)}}
+.seats i{aspect-ratio:1;border-radius:5px;background:#dfe3ec;transform:scale(.4);opacity:0;transition:all .4s}
+.seats.in i{transform:none;opacity:1}
+.seats i.s{background:var(--accent)}.seats i.k{background:#ff9f1c}
+.seats.fs i.k,.seats.fk i.s{opacity:.18}
+.split{display:grid;grid-template-columns:60fr 40fr;gap:10px;margin-top:20px;max-width:640px}
+.split button{border:2px solid transparent;border-radius:14px;padding:16px;text-align:left;color:#fff}
+.split .s{background:var(--accent)}.split .k{background:#ff9f1c}
+.split button.on{border-color:var(--ink)}
+.split b{display:block;font-size:clamp(30px,6vw,46px);font-weight:900;line-height:1}
+.split span{font-size:14px;font-weight:700}
+.why{margin-top:16px;max-width:640px;padding:16px 18px;border-radius:12px;background:var(--soft);font-size:16px;min-height:76px}
+.why b{color:var(--accent)}
+
+.tline{position:relative;margin-top:30px;padding-left:28px}
+.tline:before{content:"";position:absolute;left:8px;top:8px;bottom:8px;width:3px;background:var(--line);border-radius:3px}
+.ev{position:relative;padding:0 0 10px}
+.ev button{display:grid;grid-template-columns:118px 1fr auto;gap:12px;align-items:center;width:100%;text-align:left;background:#fff;border:1.5px solid var(--line);border-radius:12px;padding:13px 16px}
+.ev button:before{content:"";position:absolute;left:-27px;top:17px;width:17px;height:17px;border-radius:50%;background:#fff;border:4px solid #c3c9d6}
+.ev.open button{border-color:var(--accent)}
+.ev.open button:before,.ev.g-결정 button:before{border-color:var(--accent)}
+.ev.g-결정 button:before{background:var(--accent)}
+.ev.g-앞으로 button:before{border-style:dashed}
+.ev .d{font-weight:900;color:var(--accent);font-size:15px}
+.ev .t{font-weight:800;font-size:16px}
+.ev .g{font-size:12px;font-weight:800;color:var(--muted);border:1px solid var(--line);border-radius:99px;padding:2px 9px;white-space:nowrap}
+.ev .x{max-height:0;overflow:hidden;transition:max-height .35s ease;font-size:15.5px;color:#374151;padding:0 16px}
+.ev.open .x{max-height:260px;padding:12px 16px 6px}
+@media(max-width:560px){.ev button{grid-template-columns:1fr auto}.ev .d{grid-column:1/-1}}
+
+.idx{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;margin-top:24px}
+@media(max-width:640px){.idx{grid-template-columns:1fr 1fr}}
+.idx button{border:1.5px solid var(--line);background:#fff;border-radius:12px;padding:14px 10px;font-weight:800;font-size:15px}
+.idx button b{display:block;font-size:28px;font-weight:900;color:var(--accent);line-height:1.1}
+.idx button.on{border-color:var(--accent);background:#eaf0ff}
+.idxl{margin:14px 0 0;padding:0;list-style:none;display:grid;gap:8px}
+.idxl li{background:#fff;border:1px solid var(--line);border-radius:10px;padding:12px 16px;font-size:15.5px;font-weight:600}
+.rule3{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin-top:18px}
+@media(max-width:640px){.rule3{grid-template-columns:1fr}}
+.rule3 div{background:#0c1a3d;color:#fff;border-radius:12px;padding:16px;font-weight:800;text-align:center}
+
+.places{display:grid;grid-template-columns:minmax(220px,300px) 1fr;gap:28px;align-items:center;margin-top:20px}
+@media(max-width:720px){.places{grid-template-columns:1fr}.places .mapbox{max-width:260px;margin:0 auto}}
+.kmap .pin.k circle.dot,.kmap .pin.k circle.halo{fill:#ff9f1c}
+.pcard{display:grid;gap:12px}
+.pcard .card{cursor:pointer;transition:border-color .15s}
+.pcard .card.on{border-color:var(--ink)}
+.pcard h3{font-size:20px;font-weight:900}
+.pcard p{font-size:15px;color:#374151;margin-top:4px}
+
+.qa details{border:1.5px solid var(--line);border-radius:12px;background:#fff;margin-bottom:10px;overflow:hidden}
+.qa details[open]{border-color:var(--accent)}
+.qa summary{list-style:none;cursor:pointer;padding:16px 18px;font-weight:800;font-size:16.5px;display:flex;gap:12px;align-items:flex-start}
+.qa summary::-webkit-details-marker{display:none}
+.qa summary .c{flex:none;font-size:12px;font-weight:800;color:var(--accent);background:#eaf0ff;border-radius:6px;padding:3px 8px;margin-top:2px}
+.qa summary:after{content:"+";margin-left:auto;font-size:22px;line-height:1;color:var(--muted)}
+.qa details[open] summary:after{content:"−"}
+.qa .a{padding:0 18px 18px 18px;font-size:15.5px;color:#374151}
+.qa .none{color:var(--muted);padding:20px 0}
+{% endblock %}
+
+{% block main %}
+<section class="hero">
+  <svg class="cross" viewBox="0 0 100 100" aria-hidden="true"><path d="M38 6h24v32h32v24H62v32H38V62H6V38h32z" fill="#fff"/></svg>
+  <div class="wrap" style="position:relative">
+    <div class="kicker">지역의대 신설 지역·대학 선정 · 타임라인과 Q&amp;A</div>
+    <h1>의대 없는 지역에<br><em>100개</em>의 자리</h1>
+    <p class="dek">국립순천대 60명, 국립경국대 40명. 정부가 지역의대 신설 대학과 정원을 정했습니다. 아홉 달 동안 어떤 과정을 거쳤고, 왜 60 대 40인지 따라가 봅니다.</p>
+    <a class="cta" href="#seats">자리부터 보기 <span class="arr">↓</span></a>
+    <p class="src">{{ sc.source }}</p>
+  </div>
+</section>
+
+<section class="blk" id="seats">
+  <div class="wrap">
+    <div class="eyebrow">정원 배정</div>
+    <h2 class="h">네모 하나가 의대 정원 1명</h2>
+    <p class="lead">대학을 누르면 그 대학 몫과 배정 이유가 나옵니다.</p>
+    <div class="seats rv" id="seatG">{% for i in range(100) %}<i class="{{ 's' if i < 60 else 'k' }}" style="transition-delay:{{ i*8 }}ms"></i>{% endfor %}</div>
+    <div class="split">
+      <button class="s" data-u="s"><b class="num">60명</b><span>국립순천대학교 · 전남광주통합특별시(舊 전라남도)</span></button>
+      <button class="k" data-u="k"><b class="num">40명</b><span>국립경국대학교 · 경상북도</span></button>
+    </div>
+    <p class="why" id="why" aria-live="polite">당초 보건의료정책심의위원회가 결정한 <b>연 100명</b> 규모 안에서 각 지역 여건을 고려해 나눴습니다.</p>
+  </div>
+</section>
+
+<section class="blk soft">
+  <div class="wrap">
+    <div class="eyebrow">추진 경과</div>
+    <h2 class="h rv">2월 결정에서 11월 발표까지</h2>
+    <p class="lead rv">항목을 누르면 그때 있었던 일을 볼 수 있습니다.</p>
+    <div class="chips" id="tf" style="margin-top:20px">
+      <button class="chip on" data-g="">전체</button><button class="chip" data-g="기획단">기획단 회의</button><button class="chip" data-g="지자체">지자체 제출</button><button class="chip" data-g="결정">정부 결정</button><button class="chip" data-g="앞으로">앞으로</button>
+    </div>
+    <div class="tline" id="tl">
+      {% for e in tl %}
+      <div class="ev g-{{ e.g }} {{ 'open' if e.d == '11. 4.' }}" data-g="{{ e.g }}">
+        <button aria-expanded="{{ 'true' if e.d == '11. 4.' else 'false' }}"><span class="d">{{ e.d }}</span><span class="t">{{ e.t }}</span><span class="g">{{ e.g }}</span></button>
+        <div class="x">{{ e.x }}</div>
+      </div>
+      {% endfor %}
+    </div>
+  </div>
+</section>
+
+<section class="blk">
+  <div class="wrap">
+    <div class="eyebrow">후보지역은 어떻게 골랐나</div>
+    <h2 class="h rv">4개 분야, 13개 지표, 100점</h2>
+    <p class="lead rv">의료 접근성이 상대적으로 취약하고 의사 양성·수련·정착 기반이 가장 필요한 곳을 정량평가로 가렸습니다. 분야를 눌러 세부 지표를 확인하세요.</p>
+    <div class="idx" id="idx">{% for f in idx %}<button data-i="{{ loop.index0 }}" class="{{ 'on' if loop.first }}"><b class="num">{{ f.n }}</b>{{ f.f }}</button>{% endfor %}</div>
+    <ul class="idxl" id="idxl"></ul>
+
+    <div class="eyebrow" style="margin-top:56px">지역의대 설립 원칙</div>
+    <div class="rule3"><div class="rv">국립대학에 설립</div><div class="rv">1대학 · 1병원</div><div class="rv">의대와 병원 간 지리적 근접성</div></div>
+
+    <div class="eyebrow" style="margin-top:56px">선정 대학</div>
+    <div class="places">
+      <div class="mapbox rv">
+        <svg class="kmap" viewBox="0 0 {{ kr.w }} {{ kr.h }}" role="img" aria-label="순천과 안동 위치 약도">
+          <path class="land" d="{{ kr.path }}"/><ellipse class="land" cx="{{ kr.jeju.x }}" cy="{{ kr.jeju.y }}" rx="30" ry="12"/>
+          <g class="pin" data-u="s"><circle class="halo" cx="{{ kr.pt['순천'].x }}" cy="{{ kr.pt['순천'].y }}" r="13"/><circle class="dot" cx="{{ kr.pt['순천'].x }}" cy="{{ kr.pt['순천'].y }}" r="9"/><text x="{{ kr.pt['순천'].x + 14 }}" y="{{ kr.pt['순천'].y + 5 }}">순천대 60</text></g>
+          <g class="pin k" data-u="k"><circle class="halo" cx="{{ kr.pt['안동'].x }}" cy="{{ kr.pt['안동'].y }}" r="13"/><circle class="dot" cx="{{ kr.pt['안동'].x }}" cy="{{ kr.pt['안동'].y }}" r="9"/><text x="{{ kr.pt['안동'].x - 14 }}" y="{{ kr.pt['안동'].y + 5 }}" text-anchor="end">경국대 40</text></g>
+        </svg>
+        <p class="note" style="text-align:center">위치 안내용 약도 (대학 소재 도시 기준)</p>
+      </div>
+      <div class="pcard">
+        <div class="card rv" data-u="s"><h3>국립순천대학교 · 60명</h3><p>전남광주통합특별시가 전남연구원 심사를 거쳐 8월 30일 후보 대학으로 추천했습니다.</p></div>
+        <div class="card rv" data-u="k"><h3>국립경국대학교 · 40명</h3><p>경상북도가 후보 대학으로 추천해 8월 20일 기한 안에 공동 계획서를 제출했습니다.</p></div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<section class="blk soft qa">
+  <div class="wrap">
+    <div class="eyebrow">쟁점 Q&amp;A</div>
+    <h2 class="h rv">정부가 답한 열 가지 질문</h2>
+    <p class="lead rv">보도자료 붙임의 Q&amp;A를 주제별로 추렸습니다. 궁금한 주제를 고르거나 검색해 보세요.</p>
+    <div class="chips" id="qf" style="margin:20px 0 12px">
+      <button class="chip on" data-c="">전체 10</button>
+      {% for c in ['권한','추천 과정','부지','평가','정원','일정'] %}<button class="chip" data-c="{{ c }}">{{ c }}</button>{% endfor %}
+    </div>
+    <input id="qs" type="search" placeholder="검색어 (예: 부지, 법률자문, 55명)" aria-label="Q&A 검색"
+      style="width:100%;padding:13px 16px;border:1.5px solid var(--line);border-radius:12px;font:inherit;margin-bottom:16px">
+    <div id="ql">
+      {% for x in qa %}
+      <details data-c="{{ x.c }}"><summary><span class="c">Q{{ loop.index }} · {{ x.c }}</span><span>{{ x.q }}</span></summary><div class="a">{{ x.a }}</div></details>
+      {% endfor %}
+      <p class="none" id="qn" hidden>해당하는 질문이 없습니다.</p>
+    </div>
+    <p class="note">답변은 보도자료 붙임 ‘주요 Q&amp;A’의 정부 답변을 줄인 것입니다.</p>
+    <p class="quote rv" style="margin-top:40px">“지역의대 신설은 기존 의대 증원만으로는 해소하기 어려운 지역 간 의료격차를 해소하고 지역 의료인력 양성·수련·정착 체계를 강화하기 위한 중요한 국정과제이다.”
+      <cite>이형훈 보건복지부 제2차관</cite></p>
+  </div>
+</section>
+{% endblock %}
+
+{% block js %}
+// 정원 60 : 40
+const WHY={s:'<b>순천대 60명</b> · 전남광주통합특별시는 신설 의대가 개교 초기에 100명 규모의 정원을 운영하기 어렵다는 점이 고려됐습니다.',
+  k:'<b>경국대 40명</b> · 경북은 이미 남부권에 55명 규모의 동국의대가 있다는 점이 고려됐습니다.'};
+const sg=document.getElementById('seatG');let su='';
+function uni(u){su=su===u?'':u;sg.classList.toggle('fs',su==='s');sg.classList.toggle('fk',su==='k');
+  document.querySelectorAll('.split button,.pcard .card,.places .pin').forEach(b=>b.classList.toggle('on',b.dataset.u===su));
+  document.getElementById('why').innerHTML=su?WHY[su]:'당초 보건의료정책심의위원회가 결정한 <b>연 100명</b> 규모 안에서 각 지역 여건을 고려해 나눴습니다.'}
+document.querySelectorAll('.split button,.pcard .card,.places .pin').forEach(b=>b.onclick=()=>uni(b.dataset.u));
+// 타임라인
+document.querySelectorAll('#tl .ev button').forEach(b=>b.onclick=()=>{const o=b.parentElement.classList.toggle('open');b.setAttribute('aria-expanded',o)});
+document.querySelectorAll('#tf .chip').forEach(c=>c.onclick=()=>{document.querySelectorAll('#tf .chip').forEach(x=>x.classList.toggle('on',x===c));
+  document.querySelectorAll('#tl .ev').forEach(e=>e.hidden=!!c.dataset.g&&e.dataset.g!==c.dataset.g)});
+// 평가지표
+const IDX={{ idx|tojson }};
+function showIdx(i){document.querySelectorAll('#idx button').forEach((b,k)=>b.classList.toggle('on',k===i));
+  document.getElementById('idxl').innerHTML=IDX[i].i.map(t=>'<li>'+t+'</li>').join('')}
+document.querySelectorAll('#idx button').forEach(b=>b.onclick=()=>showIdx(+b.dataset.i));showIdx(0);
+// Q&A 필터 · 검색
+let qc='';const qd=[...document.querySelectorAll('#ql details')],qs=document.getElementById('qs');
+function fq(){const w=qs.value.trim();let n=0;qd.forEach(d=>{const hit=(!qc||d.dataset.c===qc)&&(!w||d.textContent.includes(w));d.hidden=!hit;if(hit)n++;if(w&&hit)d.open=true});
+  document.getElementById('qn').hidden=n>0}
+document.querySelectorAll('#qf .chip').forEach(c=>c.onclick=()=>{qc=c.dataset.c;document.querySelectorAll('#qf .chip').forEach(x=>x.classList.toggle('on',x===c));fq()});
+qs.oninput=fq;
+{% endblock %}

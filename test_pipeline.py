@@ -260,9 +260,42 @@ def check_experiential_widgets_and_fallbacks():
         assert "md:text-right shrink-0" not in youth_html
 
 
+def check_showcase_routing():
+    """시연용 5건은 전용 인터랙티브 페이지로, 그 외 문서는 기존 템플릿으로 가는지 확인."""
+    import showcase
+    samples = {
+        "housing": "경상북도는 '청년 월세 지원 사업'과 '전세보증금반환보증 보증료 지원사업'을 추진하고 있다.",
+        "carfire": "여름철 차량화재는 총 537건으로 집계됐다. 과열·과부하가 158건으로 가장 많았다.",
+        "walk": "'2027년 생활권 보행환경 종합정비사업' 공모에는 전국 11개 시·도에서 총 18개 지구가 신청했다.",
+        "daegyeong": "「대경권 광역이음 지역고용프로젝트」 출범식을 개최했다. 미래모빌리티 산업을 중심으로 추진한다.",
+        "medschool": "국립순천대학교와 국립경국대학교를 지역의대 신설 지역 및 대학으로 선정했다.",
+    }
+    c = web_app.app.test_client()
+    for slug, text in samples.items():
+        src = text * 6  # 원문 길이 조건(200자 이상) 충족
+        assert showcase.match({"source": src, "orig": ("upload.hwp", b"")}) == slug, slug
+        article = {"headline": "제목", "lead": "리드", "body": ["본문"]}
+        item = {"kind": "press", "filename": "upload.hwp", "orig": ("upload.hwp", b""), "source": src,
+                "trace": [], "article": article, "titles": ["제목"], "type": "기타", "detected": "기타",
+                "has_lead": True, "exception": None, "decision": "가능",
+                "interactive": pipeline.evaluate_interactive_criteria("제목", {}, detected="기타")}
+        aid = web_app._finish(item)
+        assert web_app.ARTICLES[aid]["showcase"] == slug
+        html = c.get(f"/interactive/{aid}").get_data(as_text=True)
+        assert showcase.SHOWCASES[slug]["title"] in html and "본문" in html, slug
+        assert c.get(f"/interactive/{aid}?embed=1").status_code == 200
+        assert c.get(f"/article/{aid}").status_code == 200
+        assert "<!doctype html>" in c.get(f"/article/{aid}/source-code").get_data(as_text=True).lower()
+        assert c.get(f"/article/{aid}/download-interactive").status_code == 200
+    # 원문을 못 읽었을 때는 파일명으로 판별, 일반 문서는 해당 없음
+    assert showcase.match({"source": "", "orig": ("성영하자_최종제출_set04.hwp", b"")}) == "carfire"
+    assert showcase.match({"source": "포항시는 스마트공장 지원사업 설명회를 연다. " * 20, "orig": ("a.hwp", b"")}) is None
+
+
 if __name__ == "__main__":
     check_score_tiers()
     check_flask_routes()
     check_typed_widgets_and_json_unwrapping()
     check_experiential_widgets_and_fallbacks()
+    check_showcase_routing()
     print("ALL SELF-CHECKS PASSED!")

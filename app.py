@@ -16,6 +16,7 @@ from flask import Flask, Response, abort, redirect, render_template, request, se
 
 import evaluate
 import pipeline
+import showcase
 from pipeline import PRESS_TYPES, agent_ready
 
 app = Flask(__name__)
@@ -102,6 +103,7 @@ def _finish(item: dict, outlet: str = "") -> str:
     """처리된 item에 화면용 비교 결과를 붙여 저장하고 id를 돌려줌."""
     item["outlet"] = outlet
     if item.get("article"):
+        item["showcase"] = showcase.match(item)  # 시연용 5건이면 전용 인터랙티브로 연결
         a = item["article"]
         item["cmp"] = compare(item["source"], ([a["lead"]] if a["lead"] else []) + a["body"])
     item_id = uuid.uuid4().hex[:10]
@@ -179,17 +181,28 @@ def flow(article_id):
     return render_template("flow.html", id=article_id, item=item, kind_label=pipeline.KIND_LABEL)
 
 
+def _interactive_html(article_id: str, item: dict, **extra) -> str:
+    """인터랙티브 기사 HTML (시연용 전용 페이지 → LLM 생성 HTML → 템플릿 바인딩 순)."""
+    slug = item.get("showcase")
+    if slug:
+        return render_template(f"showcase/{slug}.html", id=article_id,
+                               **showcase.context(slug), **extra, **item)
+    llm_html = item.get("llm_html")
+    if llm_html and ("<!doctype" in llm_html.lower() or "<html" in llm_html.lower()):
+        return llm_html
+    return render_template("interactive.html", id=article_id, **extra, **item)
+
+
 @app.route("/interactive/<article_id>")
 def interactive_view(article_id):
     """독립형 인터랙티브 기사 전체화면 웹페이지 뷰."""
     item = ARTICLES.get(article_id)
     if not item:
         return redirect(url_for("index"))
-    llm_html = item.get("llm_html")
-    if llm_html and ("<!doctype" in llm_html.lower() or "<html" in llm_html.lower()):
-        return Response(llm_html, mimetype="text/html")
-    force = request.args.get("force") == "1"
-    return render_template("interactive.html", id=article_id, force_interactive=force, **item)
+    return Response(_interactive_html(article_id, item,
+                                      force_interactive=request.args.get("force") == "1",
+                                      embed=request.args.get("embed") == "1"),
+                    mimetype="text/html")
 
 
 @app.route("/article/<article_id>/source-code")
@@ -198,11 +211,7 @@ def source_code(article_id):
     item = ARTICLES.get(article_id)
     if not item:
         return Response("기사를 찾을 수 없습니다.", status=404, mimetype="text/plain; charset=utf-8")
-    llm_html = item.get("llm_html")
-    if llm_html and ("<!doctype" in llm_html.lower() or "<html" in llm_html.lower()):
-        html = llm_html
-    else:
-        html = render_template("interactive.html", id=article_id, **item)
+    html = _interactive_html(article_id, item)
     return Response(html, mimetype="text/plain; charset=utf-8")
 
 
@@ -212,11 +221,7 @@ def download_interactive(article_id):
     item = ARTICLES.get(article_id)
     if not item:
         return redirect(url_for("index"))
-    llm_html = item.get("llm_html")
-    if llm_html and ("<!doctype" in llm_html.lower() or "<html" in llm_html.lower()):
-        html = llm_html
-    else:
-        html = render_template("interactive.html", id=article_id, **item)
+    html = _interactive_html(article_id, item)
     filename = f"interactive_article_{article_id}.html"
     return Response(
         html,
@@ -278,6 +283,7 @@ def regenerate(article_id):
     outlet = item.get("outlet", "")
     ARTICLES[article_id] = new
     new["outlet"] = outlet
+    new["showcase"] = showcase.match(new)
     a = new["article"]
     new["cmp"] = compare(new["source"], ([a["lead"]] if a["lead"] else []) + a["body"])
     return redirect(url_for("article", article_id=article_id))
